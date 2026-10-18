@@ -1,0 +1,313 @@
+{
+  "repo": "/home/eclipse/Documents/GitHub/jetbase",
+  "revision": "ba2f8ca60a22345f",
+  "files": 169,
+  "chunks": 988,
+  "symbols": 747,
+  "symbol_retrieval": {
+    "fixed_B0": {
+      "mrr": 0.0,
+      "n": 200,
+      "recall@1": 0.0,
+      "recall@5": 0.0,
+      "recall@10": 0.0,
+      "ndcg@10": 0.0,
+      "latency_ms": 0.002
+    },
+    "grep(literal)": {
+      "mrr": 0.2972,
+      "n": 200,
+      "recall@1": 0.05,
+      "recall@5": 0.67,
+      "recall@10": 0.885,
+      "ndcg@10": 0.4332,
+      "latency_ms": 1.017
+    },
+    "grep(terms)": {
+      "mrr": 0.4404,
+      "n": 200,
+      "recall@1": 0.22,
+      "recall@5": 0.78,
+      "recall@10": 0.91,
+      "ndcg@10": 0.5504,
+      "latency_ms": 2.529
+    },
+    "bm25": {
+      "mrr": 0.5143,
+      "n": 200,
+      "recall@1": 0.33,
+      "recall@5": 0.77,
+      "recall@10": 0.915,
+      "ndcg@10": 0.6068,
+      "latency_ms": 1.242
+    },
+    "dense": {
+      "mrr": 0.4519,
+      "n": 200,
+      "recall@1": 0.29,
+      "recall@5": 0.605,
+      "recall@10": 0.81,
+      "ndcg@10": 0.531,
+      "latency_ms": 4.117
+    },
+    "lsi": {
+      "mrr": 0.5036,
+      "n": 200,
+      "recall@1": 0.335,
+      "recall@5": 0.725,
+      "recall@10": 0.84,
+      "ndcg@10": 0.578,
+      "latency_ms": 0.391
+    },
+    "hybrid": {
+      "mrr": 0.8057,
+      "n": 200,
+      "recall@1": 0.69,
+      "recall@5": 0.965,
+      "recall@10": 1.0,
+      "ndcg@10": 0.8539,
+      "latency_ms": 2.132
+    },
+    "hybrid+hash": {
+      "mrr": 0.7955,
+      "n": 200,
+      "recall@1": 0.675,
+      "recall@5": 0.96,
+      "recall@10": 1.0,
+      "ndcg@10": 0.8461,
+      "latency_ms": 5.696
+    },
+    "hybrid+prf": {
+      "mrr": 0.737,
+      "n": 200,
+      "recall@1": 0.575,
+      "recall@5": 0.965,
+      "recall@10": 1.0,
+      "ndcg@10": 0.8025,
+      "latency_ms": 9.947
+    },
+    "hybrid+mmr": {
+      "mrr": 0.5026,
+      "n": 200,
+      "recall@1": 0.35,
+      "recall@5": 0.725,
+      "recall@10": 0.915,
+      "ndcg@10": 0.5957,
+      "latency_ms": 26.397
+    }
+  },
+  "docstring_retrieval": {
+    "fixed_B0": {
+      "mrr": 0.0,
+      "n": 200,
+      "recall@1": 0.0,
+      "recall@5": 0.0,
+      "recall@10": 0.0,
+      "ndcg@10": 0.0,
+      "latency_ms": 0.002
+    },
+    "grep(literal)": {
+      "mrr": 0.9846,
+      "n": 200,
+      "recall@1": 0.975,
+      "recall@5": 1.0,
+      "recall@10": 1.0,
+      "ndcg@10": 0.9885,
+      "latency_ms": 0.933
+    },
+    "grep(terms)": {
+      "mrr": 0.7616,
+      "n": 200,
+      "recall@1": 0.625,
+      "recall@5": 0.965,
+      "recall@10": 0.99,
+      "ndcg@10": 0.8182,
+      "latency_ms": 3.905
+    },
+    "bm25": {
+      "mrr": 0.8859,
+      "n": 200,
+      "recall@1": 0.82,
+      "recall@5": 0.97,
+      "recall@10": 0.985,
+      "ndcg@10": 0.9098,
+      "latency_ms": 2.424
+    },
+    "dense": {
+      "mrr": 0.5989,
+      "n": 200,
+      "recall@1": 0.47,
+      "recall@5": 0.755,
+      "recall@10": 0.83,
+      "ndcg@10": 0.6514,
+      "latency_ms": 4.197
+    },
+    "lsi": {
+      "mrr": 0.7484,
+      "n": 200,
+      "recall@1": 0.645,
+      "recall@5": 0.885,
+      "recall@10": 0.945,
+      "ndcg@10": 0.795,
+      "latency_ms": 0.379
+    },
+    "hybrid": {
+      "mrr": 0.8182,
+      "n": 200,
+      "recall@1": 0.705,
+      "recall@5": 0.95,
+      "recall@10": 0.965,
+      "ndcg@10": 0.8543,
+      "latency_ms": 3.233
+    },
+    "hybrid+hash": {
+      "mrr": 0.7615,
+      "n": 200,
+      "recall@1": 0.645,
+      "recall@5": 0.9,
+      "recall@10": 0.92,
+      "ndcg@10": 0.7982,
+      "latency_ms": 6.832
+    },
+    "hybrid+prf": {
+      "mrr": 0.6991,
+      "n": 200,
+      "recall@1": 0.535,
+      "recall@5": 0.91,
+      "recall@10": 0.95,
+      "ndcg@10": 0.7604,
+      "latency_ms": 11.596
+    },
+    "hybrid+mmr": {
+      "mrr": 0.7417,
+      "n": 200,
+      "recall@1": 0.645,
+      "recall@5": 0.865,
+      "recall@10": 0.94,
+      "ndcg@10": 0.7872,
+      "latency_ms": 27.11
+    }
+  },
+  "nl_retrieval": {
+    "fixed_B0": {
+      "mrr": 0.0,
+      "n": 200,
+      "recall@1": 0.0,
+      "recall@5": 0.0,
+      "recall@10": 0.0,
+      "ndcg@10": 0.0,
+      "latency_ms": 0.002
+    },
+    "grep(literal)": {
+      "mrr": 0.0,
+      "n": 200,
+      "recall@1": 0.0,
+      "recall@5": 0.0,
+      "recall@10": 0.0,
+      "ndcg@10": 0.0,
+      "latency_ms": 0.977
+    },
+    "grep(terms)": {
+      "mrr": 0.0003,
+      "n": 200,
+      "recall@1": 0.0,
+      "recall@5": 0.0,
+      "recall@10": 0.0,
+      "ndcg@10": 0.0,
+      "latency_ms": 3.912
+    },
+    "bm25": {
+      "mrr": 0.0005,
+      "n": 200,
+      "recall@1": 0.0,
+      "recall@5": 0.0,
+      "recall@10": 0.0,
+      "ndcg@10": 0.0,
+      "latency_ms": 2.042
+    },
+    "dense": {
+      "mrr": 0.002,
+      "n": 200,
+      "recall@1": 0.0,
+      "recall@5": 0.0,
+      "recall@10": 0.01,
+      "ndcg@10": 0.003,
+      "latency_ms": 4.045
+    },
+    "lsi": {
+      "mrr": 0.0079,
+      "n": 200,
+      "recall@1": 0.0,
+      "recall@5": 0.01,
+      "recall@10": 0.03,
+      "ndcg@10": 0.0104,
+      "latency_ms": 0.372
+    },
+    "hybrid": {
+      "mrr": 0.0034,
+      "n": 200,
+      "recall@1": 0.0,
+      "recall@5": 0.0,
+      "recall@10": 0.015,
+      "ndcg@10": 0.0051,
+      "latency_ms": 2.895
+    },
+    "hybrid+hash": {
+      "mrr": 0.0031,
+      "n": 200,
+      "recall@1": 0.0,
+      "recall@5": 0.0,
+      "recall@10": 0.01,
+      "ndcg@10": 0.0033,
+      "latency_ms": 6.485
+    },
+    "hybrid+prf": {
+      "mrr": 0.0916,
+      "n": 200,
+      "recall@1": 0.04,
+      "recall@5": 0.13,
+      "recall@10": 0.19,
+      "ndcg@10": 0.1094,
+      "latency_ms": 10.98
+    },
+    "hybrid+mmr": {
+      "mrr": 0.003,
+      "n": 200,
+      "recall@1": 0.0,
+      "recall@5": 0.005,
+      "recall@10": 0.005,
+      "ndcg@10": 0.0019,
+      "latency_ms": 26.809
+    }
+  },
+  "test_selection": {
+    "n_tests": 339,
+    "n_changed_symbols": 200,
+    "scores": {
+      "selector": {
+        "recall@5": 0.9644,
+        "recall@10": 1.0,
+        "precision@10": 0.23,
+        "mrr": 0.9958,
+        "suite_fraction_to_cover_all": 0.0223,
+        "n": 200
+      },
+      "alpha": {
+        "recall@5": 0.0241,
+        "recall@10": 0.0371,
+        "precision@10": 0.027,
+        "mrr": 0.0476,
+        "suite_fraction_to_cover_all": 0.5382,
+        "n": 200
+      },
+      "random": {
+        "recall@5": 0.0111,
+        "recall@10": 0.0201,
+        "precision@10": 0.0085,
+        "mrr": 0.0345,
+        "suite_fraction_to_cover_all": 0.6228,
+        "n": 200
+      }
+    }
+  }
+}
