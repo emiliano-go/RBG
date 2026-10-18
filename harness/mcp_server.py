@@ -1,4 +1,4 @@
-"""Super Harness MCP server facade (spec 3.3B, Phase 0 read-only surface).
+"""RBG Harness MCP server facade (spec 3.3B, Phase 0 read-only surface).
 
 A dependency-free, stateless JSON-RPC 2.0 server over stdio.  It exposes the
 same internal service calls the native CLI uses -- retrieval, symbols, impact,
@@ -28,7 +28,7 @@ from .retrieval import HybridRetriever, tokenize
 from .training import LearnedModels, read_ledger, train_from_ledger
 from .verify import Sandbox
 
-SERVER_NAME = "super-harness"
+SERVER_NAME = "rbg-mcp"
 SERVER_VERSION = "0.2.0"
 DEFAULT_PROTOCOL = "2025-06-18"
 
@@ -605,7 +605,7 @@ def handle(msg: dict) -> dict | None:
             return _error(msg_id, -32602, f"unknown prompt: {name}")
         root = args.get("root", "")
         task = args.get("task", "")
-        text = (f"Use the super-harness tools for repository {root!r}. "
+        text = (f"Use the rbg-mcp tools for repository {root!r}. "
                 f"First call retrieve_context for the task below, then edit only "
                 f"the retrieved files, then run_checks('compile') and "
                 f"run_checks('tests').\n\nTask: {task}")

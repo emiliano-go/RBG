@@ -245,7 +245,7 @@ def test_mcp_initialize_and_tools_list():
     init = mcp_server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
                               "params": {"protocolVersion": "2026-07-28"}})
     assert init["result"]["protocolVersion"] == "2026-07-28"
-    assert init["result"]["serverInfo"]["name"] == "super-harness"
+    assert init["result"]["serverInfo"]["name"] == "rbg-mcp"
     listed = mcp_server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
     names = {t["name"] for t in listed["result"]["tools"]}
     assert {"search_code", "retrieve_context", "find_symbol", "rank_tests",

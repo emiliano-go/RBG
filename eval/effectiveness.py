@@ -1,4 +1,4 @@
-"""Effectiveness evaluation for the Super Harness, run against a real repo.
+"""Effectiveness evaluation for the RBG Harness, run against a real repo.
 
 Measures exactly the metrics the spec asks for (spec 5.2, 5.4, 9.2):
 

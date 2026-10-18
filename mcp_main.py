@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Launcher for the Super Harness MCP server (stdio transport).
+"""Launcher for the RBG Harness MCP server (stdio transport).
 
 Referenced by opencode's global config so the server runs regardless of the
 client's working directory.
