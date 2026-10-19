@@ -29,7 +29,8 @@ from .models import TestSelector
 from .paths import resolve_within
 from .plan import PlanDocument, PlanEditor, audit_completion, parse_plan, scope_drift
 from .retrieval import FTSBackend, HybridRetriever, LSIEncoder, tokenize
-from .training import LearnedModels, read_ledger, train_from_ledger
+from .training import (LearnedModels, PROMOTION_KEY, read_ledger,
+                       train_from_ledger, validate_and_promote)
 from .verify import Sandbox
 
 SERVER_NAME = "rbg-mcp"
@@ -189,6 +190,18 @@ def _retriever(root: str) -> HybridRetriever:
     return _RETRIEVER_CACHE[idx.root]
 
 
+def _apply_validation(models: LearnedModels | None, store, revision: str) -> LearnedModels | None:
+    """Restore the promotion verdict only for the artifact it was earned on."""
+    if models is None:
+        return None
+    record = store.get_meta(PROMOTION_KEY) or {}
+    models.validated = bool(
+        record.get("promoted")
+        and record.get("revision") == revision
+        and int(record.get("ledger_n", -1)) == store.ledger_count())
+    return models
+
+
 def _learned(root: str, retrain: bool = False) -> LearnedModels:
     """Trained models for a repo.
 
@@ -201,7 +214,8 @@ def _learned(root: str, retrain: bool = False) -> LearnedModels:
     store = _store(idx.root)
     key = f"{idx.root}:{idx.revision}:{store.ledger_count()}"
     if retrain:
-        models = train_from_ledger(idx.root, index=idx, store=store)
+        models = _apply_validation(
+            train_from_ledger(idx.root, index=idx, store=store), store, idx.revision)
         for k in [k for k in _LEARNED_CACHE if k.startswith(idx.root + ":")]:
             _LEARNED_CACHE.pop(k, None)
         _LEARNED_CACHE[key] = models
@@ -212,7 +226,7 @@ def _learned(root: str, retrain: bool = False) -> LearnedModels:
     try:
         got = store.load_model_at("learned", idx.revision)
         if got is not None and got[2].get("ledger_n") == store.ledger_count():
-            models = got[0]
+            models = _apply_validation(got[0], store, idx.revision)
     except Exception:
         models = None
     _LEARNED_CACHE[key] = models or LearnedModels()
@@ -459,16 +473,25 @@ def plan_audit(root: str, plan_text: str = "", task: str = "",
     }
 
 
-def train_models(root: str) -> dict:
+def train_models(root: str, validate: bool = False) -> dict:
     idx = _index(root)
-    learned = _learned(root, retrain=True)
+    verdict: dict | None = None
+    if validate:
+        verdict = validate_and_promote(idx.root)
+        for k in [k for k in _LEARNED_CACHE if k.startswith(idx.root + ":")]:
+            _LEARNED_CACHE.pop(k, None)
+        learned = _learned(root)
+    else:
+        learned = _learned(root, retrain=True)
     return {
         "root": idx.root, "revision": idx.revision, "trained": True,
+        "validated": learned.validated,
         "risk_trained": learned.risk_trained,
         "selector_trained": learned.selector_trained,
         "impact_trained": learned.impact_trained,
         "reranker_trained": learned.reranker is not None,
         "metrics": learned.metrics,
+        **({"validation": verdict} if verdict is not None else {}),
     }
 
 
@@ -479,6 +502,8 @@ def get_calibration(root: str) -> dict:
     return {
         "root": idx.root, "revision": idx.revision,
         "risk_trained": learned.risk_trained,
+        "validated": learned.validated,
+        "validation": _store(idx.root).get_meta(PROMOTION_KEY),
         "alpha": conf.alpha, "qhat": conf.qhat, "fitted": conf.fitted,
         "version": conf.version,
         "metrics": learned.metrics,
@@ -695,9 +720,10 @@ TOOLS = {
     },
     "train_models": {
         "fn": train_models,
-        "description": "Train the harness models (risk, selector, reranker, impact) from the ledger.",
+        "description": "Train the harness models (risk, selector, reranker, impact) from the ledger. With validate=true, also gate the learned risk head on a held-out Brier/coverage comparison and record the verdict.",
         "inputSchema": {"type": "object", "properties": {
-            "root": {"type": "string"}}, "required": ["root"]},
+            "root": {"type": "string"},
+            "validate": {"type": "boolean", "default": False}}, "required": ["root"]},
     },
     "plan_audit": {
         "fn": plan_audit,

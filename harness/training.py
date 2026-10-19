@@ -21,7 +21,7 @@ import numpy as np
 
 from .index import RepoIndex
 from .models import (FEATURE_NAMES, ChangeImpactModel, ConformalCalibrator,
-                     Policy, TestSelector)
+                     PlattScaler, Policy, TestSelector)
 from .retrieval import Reranker, tokenize
 
 # Enough local rows to trust a repo-specific fit; below this the pooled tier
@@ -199,6 +199,22 @@ def _brier(model, X, y) -> float:
     return float(np.mean((p - np.asarray(y, dtype=float)) ** 2))
 
 
+def rule_risk(X) -> np.ndarray:
+    """The deterministic policy's risk score, from a feature matrix.
+
+    Mirrors :meth:`Policy.decide` exactly, so a learned head can be compared
+    against the rule it is meant to replace on the same held-out rows.
+    """
+    X = np.asarray(X, dtype=float)
+    col = {name: i for i, name in enumerate(FEATURE_NAMES)}
+    risk = (0.2
+            + 0.3 * X[:, col["security_sensitive"]]
+            + 0.3 * X[:, col["public_api"]]
+            + 0.1 * np.minimum(X[:, col["changed_files"]], 3)
+            + 0.05 * X[:, col["dep_fanout"]])
+    return np.clip(risk, 0.0, 0.95)
+
+
 def wilson_ci(successes: int, n: int, z: float = 1.96) -> list[float]:
     """Wilson score interval for a proportion; a metric without an interval is
     a number without error bars (spec: report n and CI, not a bare point)."""
@@ -334,6 +350,10 @@ def train_from_ledger(root: str, index: RepoIndex | None = None, store=None) -> 
             policy = Policy()
             policy.risk_model = model
             raw_cal = np.asarray(model.predict(split.X_cal), dtype=float).ravel()
+            # Calibrate on the held-out slice, never on the rows the GBDT fit
+            # on: an in-sample Platt curve reports confidence it has not earned.
+            if len(split.y_cal) >= 2 and len(set(split.y_cal.tolist())) > 1:
+                policy.calibrator = PlattScaler().fit(raw_cal, split.y_cal)
             matrix = split.X_train if len(split.X_train) >= MIN_FIT else None
             conformal = ConformalCalibrator().fit(raw_cal, split.y_cal, matrix=matrix)
             models.policy = policy
@@ -355,7 +375,14 @@ def train_from_ledger(root: str, index: RepoIndex | None = None, store=None) -> 
             }
             if len(split.y_test):
                 raw_test = np.asarray(model.predict(split.X_test), dtype=float).ravel()
-                risk["test_brier"] = round(float(np.mean((raw_test - split.y_test) ** 2)), 4)
+                scored = (np.asarray([policy.calibrator(float(r)) for r in raw_test],
+                                     dtype=float)
+                          if policy.calibrator is not None else raw_test)
+                risk["test_brier"] = round(float(np.mean((scored - split.y_test) ** 2)), 4)
+                risk["rule_brier"] = round(float(np.mean(
+                    (rule_risk(split.X_test) - split.y_test) ** 2)), 4)
+                risk["test_coverage"] = round(conformal.coverage(raw_test, split.y_test), 4)
+                risk["test_positive_rate"] = round(float(split.y_test.mean()), 4)
             if store is not None:
                 risk["repo_holdout"] = _repo_holdout(model, store, repo_id)
             models.metrics["risk"] = risk
@@ -391,3 +418,60 @@ def train_from_ledger(root: str, index: RepoIndex | None = None, store=None) -> 
         except Exception:
             pass
     return models
+
+
+PROMOTION_KEY = "validation:learned"
+
+
+def validate_and_promote(root: str, min_test: int = 20,
+                         tolerance: float = 0.1) -> dict:
+    """Gate the learned risk head on evidence, and record the verdict.
+
+    Promotion requires a temporal test slice with enough rows and both classes,
+    a lower Brier score than the deterministic rule it shadows, and conformal
+    coverage within ``tolerance`` of the target.  The verdict is stored in the
+    ``meta`` table keyed by (revision, ledger_n), so it applies to exactly the
+    artifact that was validated and is lost when the ledger or tree moves on.
+    """
+    from . import db
+    root = os.path.abspath(root)
+    index = RepoIndex.build(root)
+    store = db.Store(root)
+    try:
+        models = train_from_ledger(root, index=index, store=store)
+        risk = models.metrics.get("risk", {})
+        n_test = int(risk.get("n_test", 0))
+        positive = risk.get("test_positive_rate")
+        learned = risk.get("test_brier")
+        rule = risk.get("rule_brier")
+        coverage = risk.get("test_coverage")
+        alpha = float(risk.get("alpha", 0.1))
+        reasons: list[str] = []
+        if risk.get("split") != "temporal":
+            reasons.append("insufficient_history")
+        if n_test < min_test:
+            reasons.append(f"test_n_below_{min_test}")
+        if positive in (None, 0.0, 1.0):
+            reasons.append("test_needs_both_classes")
+        if learned is None or rule is None or learned >= rule:
+            reasons.append("learned_brier_not_better_than_rule")
+        if coverage is None or coverage < 1.0 - alpha - tolerance:
+            reasons.append("coverage_below_target")
+        promoted = not reasons
+        evidence = {
+            "revision": index.revision,
+            "ledger_n": int(models.metrics.get("ledger_n", 0)),
+            "n_test": n_test, "test_positive_rate": positive,
+            "test_brier": learned, "rule_brier": rule,
+            "test_coverage": coverage, "alpha": alpha,
+            "min_test": min_test, "tolerance": tolerance,
+            "promoted": promoted, "reasons": reasons,
+        }
+        store.set_meta(PROMOTION_KEY, evidence)
+        if promoted:
+            models.validated = True
+            store.save_model("learned", "learned-v1", models, models.metrics,
+                             revision=index.revision)
+        return {"root": root, **evidence, "metrics": models.metrics}
+    finally:
+        store.close()

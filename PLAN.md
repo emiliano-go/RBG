@@ -453,3 +453,18 @@ not replaced.
 - **Suite origin:** curated 50-task bugfix suite shipped in P2-7 (verified
   task-by-task by `build.py --check`). SWE-bench Verified adapter remains P2-8,
   gated on infra + a model key.
+
+---
+
+## Follow-up: caveat closure (task `caveat-closure`)
+
+Closing the gaps the evaluation found after Phase 2.
+
+| Task | Status | Verified |
+|---|---|---|
+| C0 land four manual-test fixes (compileall, PYTHONPYCACHEPREFIX, CLI dispatch, read-only plan steps) + regression tests + CI CLI run | **done** | commit `96d7180`; 128 tests |
+| C1 make model validation real: `rule_risk`, out-of-sample Platt, `validation:learned` in `meta`, `rbg validate-models`, `ledger_farm.py`, `get_calibration.validated` | **done** | temporal 60/20/20, learned Brier 0.0004 vs rule 0.3665 → promoted; 130 tests |
+| C2 hard retrieval suite (multi-file + distractors, Recall@1, ablation) | pending | |
+| C3 prove `plan_audit` causally (`PartialLLM` A/B) | pending | |
+| C4 `eval/perf.py --budget-ms` semantics | pending | |
+| C5 SWE-bench Lite retrieval-only adapter | pending | |

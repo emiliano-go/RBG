@@ -522,6 +522,45 @@ def test_learned_risk_stays_in_shadow_until_validated(tmp_path):
     assert "learned_risk_in_shadow" in rep.decision["reason_codes"]
 
 
+def test_validate_models_promotes_only_with_enough_held_out_evidence(tmp_path):
+    from harness.training import validate_and_promote
+    thin, _ = _synthetic_ledger(tmp_path / "thin", n=24)
+    refused = validate_and_promote(thin, min_test=20)
+    assert refused["promoted"] is False
+    assert any("test_n_below" in r for r in refused["reasons"])
+
+    root, _ = _synthetic_ledger(tmp_path / "rich", n=200)
+    verdict = validate_and_promote(root, min_test=20)
+    assert verdict["promoted"] is True, verdict
+    assert verdict["test_brier"] < verdict["rule_brier"]
+
+    mcp_server._LEARNED_CACHE.clear()
+    mcp_server._INDEX_CACHE.clear()
+    learned = mcp_server._learned(root)
+    assert learned.validated is True
+    assert mcp_server.get_calibration(root)["validated"] is True
+    # the verdict belongs to this artifact only
+    mcp_server._LEARNED_CACHE.clear()
+    store = hdb.Store(root)
+    store.append_ledger({"component": "orchestrator", "task_id": "later",
+                         "result": {"success": True}})
+    store.close()
+    mcp_server._LEARNED_CACHE.clear()
+    mcp_server._INDEX_CACHE.clear()
+    assert mcp_server._learned(root).validated is False
+
+
+def test_train_models_cli_and_tool_can_validate(tmp_path):
+    from harness.__main__ import main
+    root, _ = _synthetic_ledger(tmp_path / "cli", n=200)
+    assert main(["validate-models", root, "--min-test", "20"]) == 0
+    mcp_server._LEARNED_CACHE.clear()
+    mcp_server._INDEX_CACHE.clear()
+    out = mcp_server.train_models(root, validate=True)
+    assert out["validated"] is True
+    assert out["validation"]["promoted"] is True
+
+
 def test_flaky_rerun_recovers_instead_of_failing(tmp_path):
     root = tmp_path / "flaky"
     root.mkdir()

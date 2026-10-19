@@ -149,6 +149,9 @@ def main(argv: list[str] | None = None) -> int:
         if name == "retrieve":
             p.add_argument("query")
     sub.add_parser("models")
+    p = sub.add_parser("validate-models")
+    p.add_argument("root")
+    p.add_argument("--min-test", type=int, default=20)
     sub.add_parser("demo")
     p = sub.add_parser("replay")
     p.add_argument("root")
@@ -162,6 +165,11 @@ def main(argv: list[str] | None = None) -> int:
         cmd_retrieve(args.root, args.query)
     elif args.cmd == "models":
         cmd_models()
+    elif args.cmd == "validate-models":
+        from .training import validate_and_promote
+        verdict = validate_and_promote(args.root, min_test=args.min_test)
+        print(json.dumps(verdict, indent=2))
+        return 0 if verdict["promoted"] else 1
     elif args.cmd == "demo":
         return cmd_demo()
     elif args.cmd == "replay":

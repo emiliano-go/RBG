@@ -63,7 +63,7 @@ to a repository; the server indexes it lazily and caches the index per revision.
 | `get_diagnostics` | `root`, `task_id` | The recorded compiler/test evidence (diagnostics) for a task handle. |
 | `get_task_status` | `root`, `task_id` | Status, verified gates, and recorded checks for a task handle. |
 | `propose_patch` | `root`, `path`, `content` | Validates a patch proposal (syntax/shape) and returns the verdict. **Does not apply it.** |
-| `train_models` | `root` | Trains risk, selector, reranker and impact models from the ledger; returns metrics and calibration state. |
+| `train_models` | `root`, `validate=false` | Trains risk, selector, reranker and impact models from the ledger; returns metrics and calibration state. With `validate=true`, gates the risk head on a held-out Brier/coverage comparison and records the verdict. |
 | `plan_audit` | `root`, `plan_text`, `task=""`, `changed_files`, `task_id` | With `task_id`, returns the stored JSON plan and its status rollup. Otherwise parses free text into steps and computes **scope drift** and a **completeness audit**. Advisory. |
 | `plan_create` | `root`, `task_id`, `title`, `sections` | Creates the server-owned JSON plan for `(root, task_id)`; versions start at 1. |
 | `plan_append` / `plan_attach` | `root`, `task_id`, `section`, `parent_id` | Appends a top-level section or nests one under an existing section (depth cap 5). |
@@ -128,6 +128,26 @@ builds examples per component, and fits the models; it returns `LearnedModels`
 - `test_histories` → pass/fail histories for the flaky model.
 
 Call it via the `train_models` MCP tool or from Python.
+
+#### Shadow-only until evidence promotes it
+
+A learned risk head never drives a decision on its own say-so. `validated`
+starts `False`, and only `validate_and_promote(root)` (the `rbg validate-models`
+command, or `train_models(validate=True)`) can flip it. Promotion requires a
+**temporal** test slice of at least 20 rows with both classes, a Brier score
+lower than the deterministic `rule_risk` it would replace, and conformal
+coverage within tolerance of the target. The verdict is stored keyed by
+`(revision, ledger_n)`, so it applies to exactly the artifact it was earned on
+and is discarded when the tree or ledger moves on.
+
+`eval/ledger_farm.py` produces the ledger that gate needs: it runs each suite
+task twice into one root — once with retrieval off (fails, conditioning label)
+and once with the oracle fix (resolves) — interleaved so the temporal split has
+both classes, then trains and validates.
+
+```bash
+python3 -m eval.ledger_farm --suite eval/suites/curated --tasks 50
+```
 
 ### Drift detection (`harness/drift.py`)
 
@@ -298,6 +318,10 @@ rbg eval --suite eval/suites/curated --config blind-baseline --out blind-base.js
 rbg eval --suite eval/suites/curated --config blind-full --out blind-full.json
 rbg compare blind-base.json blind-full.json
 
+# farm a real ledger, train, and gate the risk head on held-out evidence
+python3 -m eval.ledger_farm --suite eval/suites/curated --tasks 50
+rbg validate-models /path/to/repo --min-test 20
+
 # run the suite
 python3 -m pytest -q
 ```
@@ -312,7 +336,10 @@ retrieval causally rather than assuming it.
 
 Experimental. The deterministic baseline (index, retrieval, gates, ledger)
 runs without any model service; the learned components train from recorded
-runs and stay advisory — the compile/test gates remain authoritative.
+runs and stay advisory — the compile/test gates remain authoritative. The
+learned risk head stays in shadow (reason code `learned_risk_in_shadow`) until
+`validate_and_promote` has beaten the deterministic rule on a held-out slice
+with recorded evidence.
 
 `bwrap` (or `nsjail`) is required: when no isolation backend probes successfully
 the harness refuses to run unless `HARNESS_ALLOW_UNISOLATED=1` is set, and an
