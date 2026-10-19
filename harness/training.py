@@ -223,6 +223,50 @@ def _flaky(hist: list[bool]) -> bool:
     return len(set(hist)) > 1
 
 
+@dataclass
+class RiskSplit:
+    """Time-ordered train / calibration / test slices of the risk examples.
+
+    ``mode`` is ``"temporal"`` when there was enough history to hold the
+    calibration slice out of training, and ``"in_sample"`` when the ledger is
+    too thin to split -- in which case metrics are honestly marked as such
+    rather than presented as held-out.
+    """
+    X_train: np.ndarray
+    y_train: np.ndarray
+    X_cal: np.ndarray
+    y_cal: np.ndarray
+    X_test: np.ndarray
+    y_test: np.ndarray
+    mode: str
+
+
+def temporal_split(X, y, train_frac: float = 0.6, cal_frac: float = 0.2) -> RiskSplit:
+    X = np.asarray(X, dtype=float)
+    y = np.asarray(y, dtype=float)
+    n = len(y)
+    if n < 20:  # too few to hold anything out meaningfully
+        return RiskSplit(X, y, X, y, X[:0], y[:0], "in_sample")
+    train = max(MIN_FIT, int(n * train_frac))
+    cal = max(train + 1, int(n * (train_frac + cal_frac)))
+    return RiskSplit(X[:train], y[:train], X[train:cal], y[train:cal],
+                     X[cal:], y[cal:], "temporal")
+
+
+def _repo_holdout(model, store, repo_id: str) -> dict:
+    """Cross-repo holdout: score the fitted head on other repos' examples only,
+    so generalisation beyond the repo it was trained on is visible."""
+    try:
+        prior_X, prior_y = store.load_examples("risk", exclude_repo=repo_id)
+    except Exception:
+        return {"n": 0}
+    n = int(len(prior_y))
+    if n < MIN_FIT:
+        return {"n": n}
+    raw = np.asarray(model.predict(prior_X), dtype=float).ravel()
+    return {"n": n, "brier": round(float(np.mean((raw - prior_y) ** 2)), 4)}
+
+
 def train_from_ledger(root: str, index: RepoIndex | None = None, store=None) -> LearnedModels:
     root = os.path.abspath(root)
     entries = read_ledger(root)
@@ -240,24 +284,36 @@ def train_from_ledger(root: str, index: RepoIndex | None = None, store=None) -> 
 
     X, y = risk_examples(entries)
     if len(y) >= MIN_ROWS:
-        model, info = _fit_risk(X, y, store, repo_id)
+        split = temporal_split(X, y)
+        model, info = _fit_risk(split.X_train, split.y_train, store, repo_id)
         if model is not None:
             policy = Policy()
             policy.risk_model = model
-            Xc, yc = X, y
-            raw = np.asarray(model.predict(Xc), dtype=float).ravel()
-            conformal = ConformalCalibrator().fit(raw, yc, matrix=Xc)
+            raw_cal = np.asarray(model.predict(split.X_cal), dtype=float).ravel()
+            matrix = split.X_train if len(split.X_train) >= MIN_FIT else None
+            conformal = ConformalCalibrator().fit(raw_cal, split.y_cal, matrix=matrix)
             models.policy = policy
             models.conformal = conformal
-            models.metrics["risk"] = {
-                "n": int(len(yc)), "positive_rate": float(yc.mean()),
-                "ece": round(conformal.base.ece([conformal.base(float(r)) for r in raw], yc), 4),
-                "conformal_coverage": round(conformal.coverage(raw, yc), 4),
+            risk = {
+                "n": int(len(y)), "positive_rate": float(y.mean()),
+                "split": split.mode,
+                "n_train": int(len(split.y_train)),
+                "n_cal": int(len(split.y_cal)),
+                "n_test": int(len(split.y_test)),
+                "ece": round(conformal.base.ece([conformal.base(float(r)) for r in raw_cal],
+                                                split.y_cal), 4),
+                "conformal_coverage": round(conformal.coverage(raw_cal, split.y_cal), 4),
                 "alpha": conformal.alpha, "pooling": info,
             }
-            models.reference = {"n": int(len(yc)), "positive_rate": float(yc.mean())}
-            if len(Xc) >= MIN_FIT:
-                d = np.linalg.norm(Xc[:, None, :] - Xc[None, :, :], axis=2)
+            if len(split.y_test):
+                raw_test = np.asarray(model.predict(split.X_test), dtype=float).ravel()
+                risk["test_brier"] = round(float(np.mean((raw_test - split.y_test) ** 2)), 4)
+            if store is not None:
+                risk["repo_holdout"] = _repo_holdout(model, store, repo_id)
+            models.metrics["risk"] = risk
+            models.reference = {"n": int(len(y)), "positive_rate": float(y.mean())}
+            if matrix is not None:
+                d = np.linalg.norm(matrix[:, None, :] - matrix[None, :, :], axis=2)
                 models.ood_threshold = float(np.percentile(d, 95))
     sel = selector_examples(entries)
     if len(sel) >= MIN_FIT and len({e[-1] for e in sel}) > 1:

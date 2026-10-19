@@ -1017,3 +1017,27 @@ def test_openai_compatible_llm_maps_reply_to_edit_ops(monkeypatch):
                         lambda system, user: '{"edits": [{"path": "shop.py", "content": "y"}]}')
     ops = llm.edit("fix", "plan", [])
     assert [(o.path, o.content) for o in ops] == [("shop.py", "y")]
+
+
+# -- temporal split + repo holdout ------------------------------------------ #
+def test_risk_split_is_temporal_with_held_out_calibration(tmp_path, monkeypatch):
+    base = tmp_path / "g"
+    base.mkdir()
+    monkeypatch.setenv("HARNESS_GLOBAL_DB", str(base / "global.db"))
+    root, idx = _synthetic_ledger(tmp_path / "split", n=60)
+    m = train_from_ledger(root, index=idx)
+    r = m.metrics["risk"]
+    assert r["split"] == "temporal"
+    assert r["n"] == 60
+    assert r["n_train"] + r["n_cal"] + r["n_test"] == 60
+    assert r["n_cal"] > 0 and r["n_test"] > 0
+    assert "test_brier" in r and 0.0 <= r["test_brier"] <= 1.0
+
+
+def test_thin_ledger_marks_in_sample_split(tmp_path, monkeypatch):
+    base = tmp_path / "g"
+    base.mkdir()
+    monkeypatch.setenv("HARNESS_GLOBAL_DB", str(base / "global.db"))
+    root, idx = _synthetic_ledger(tmp_path / "tiny", n=10)
+    m = train_from_ledger(root, index=idx)
+    assert m.metrics["risk"]["split"] == "in_sample"
