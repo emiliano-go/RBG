@@ -1041,3 +1041,18 @@ def test_thin_ledger_marks_in_sample_split(tmp_path, monkeypatch):
     root, idx = _synthetic_ledger(tmp_path / "tiny", n=10)
     m = train_from_ledger(root, index=idx)
     assert m.metrics["risk"]["split"] == "in_sample"
+
+
+# -- metric intervals ------------------------------------------------------- #
+def test_wilson_ci_and_metric_intervals(tmp_path, monkeypatch):
+    from harness.training import wilson_ci
+    lo, hi = wilson_ci(50, 100)
+    assert 0.0 <= lo < 0.5 < hi <= 1.0
+    assert wilson_ci(0, 0) == [0.0, 1.0]
+    base = tmp_path / "g"
+    base.mkdir()
+    monkeypatch.setenv("HARNESS_GLOBAL_DB", str(base / "global.db"))
+    root, idx = _synthetic_ledger(tmp_path / "ci", n=40)
+    r = train_from_ledger(root, index=idx).metrics["risk"]
+    assert len(r["conformal_coverage_ci"]) == 2
+    assert len(r["positive_rate_ci"]) == 2

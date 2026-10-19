@@ -13,6 +13,7 @@ the orchestrator keeps the risk head in shadow until it is calibrated.
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass, field
 
@@ -167,6 +168,18 @@ def _brier(model, X, y) -> float:
     return float(np.mean((p - np.asarray(y, dtype=float)) ** 2))
 
 
+def wilson_ci(successes: int, n: int, z: float = 1.96) -> list[float]:
+    """Wilson score interval for a proportion; a metric without an interval is
+    a number without error bars (spec: report n and CI, not a bare point)."""
+    if n <= 0:
+        return [0.0, 1.0]
+    p = successes / n
+    denom = 1.0 + z * z / n
+    centre = (p + z * z / (2 * n)) / denom
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
+    return [round(max(0.0, centre - half), 4), round(min(1.0, centre + half), 4)]
+
+
 def _fit_risk(X, y, store, repo_id: str):
     """Fit the risk head with partial pooling and a champion/challenger gate.
 
@@ -294,8 +307,11 @@ def train_from_ledger(root: str, index: RepoIndex | None = None, store=None) -> 
             conformal = ConformalCalibrator().fit(raw_cal, split.y_cal, matrix=matrix)
             models.policy = policy
             models.conformal = conformal
+            hits = sum(1 for r, t in zip(raw_cal, split.y_cal)
+                       if int(t > 0.5) in conformal.predict_set(r))
             risk = {
                 "n": int(len(y)), "positive_rate": float(y.mean()),
+                "positive_rate_ci": wilson_ci(int(y.sum()), len(y)),
                 "split": split.mode,
                 "n_train": int(len(split.y_train)),
                 "n_cal": int(len(split.y_cal)),
@@ -303,6 +319,7 @@ def train_from_ledger(root: str, index: RepoIndex | None = None, store=None) -> 
                 "ece": round(conformal.base.ece([conformal.base(float(r)) for r in raw_cal],
                                                 split.y_cal), 4),
                 "conformal_coverage": round(conformal.coverage(raw_cal, split.y_cal), 4),
+                "conformal_coverage_ci": wilson_ci(hits, len(split.y_cal)),
                 "alpha": conformal.alpha, "pooling": info,
             }
             if len(split.y_test):
@@ -318,17 +335,20 @@ def train_from_ledger(root: str, index: RepoIndex | None = None, store=None) -> 
     sel = selector_examples(entries)
     if len(sel) >= MIN_FIT and len({e[-1] for e in sel}) > 1:
         models.selector = TestSelector().train(sel)
-        models.metrics["selector"] = {"n": len(sel)}
+        models.metrics["selector"] = {"n": len(sel),
+                                      "positive_rate": round(float(np.mean([e[-1] for e in sel])), 4)}
     if index is None:
         index = RepoIndex.build(root)
     rr = reranker_examples(entries, index)
     if len(rr) >= MIN_FIT and len({e[2] for e in rr}) > 1:
         models.reranker = Reranker.train(rr)
-        models.metrics["reranker"] = {"n": len(rr)}
+        models.metrics["reranker"] = {"n": len(rr),
+                                      "positive_rate": round(float(np.mean([e[2] for e in rr])), 4)}
     im = impact_examples(entries, index)
     if len(im) >= MIN_FIT and len({e[-1] for e in im}) > 1:
         models.impact = ChangeImpactModel().train(im)
-        models.metrics["impact"] = {"n": len(im)}
+        models.metrics["impact"] = {"n": len(im),
+                                    "positive_rate": round(float(np.mean([e[-1] for e in im])), 4)}
     # Drift/OOD monitoring over a time-ordered split of the ledger (spec 5.8, 8.3).
     from .drift import drift_report
     models.drift = drift_report(models, entries, feature_names=FEATURE_NAMES).to_dict()

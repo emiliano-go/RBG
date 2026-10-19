@@ -483,7 +483,7 @@ class ConformalCalibrator:
         self.qhat: float | None = None
         self.train_matrix: np.ndarray | None = None
         self.fitted = False
-        self.version = "conformal-platt-v1"
+        self.version = "conformal-platt-v2"
 
     def fit(self, raw_scores, labels, matrix=None) -> "ConformalCalibrator":
         raw = np.asarray(raw_scores, dtype=float)
