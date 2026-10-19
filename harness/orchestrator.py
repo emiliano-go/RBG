@@ -13,6 +13,7 @@ import difflib
 import hashlib
 import os
 import re
+import uuid
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -208,9 +209,12 @@ class Orchestrator:
             remaining.append(o)
         return remaining
 
-    def run(self, task: str, task_id: str = "task-1") -> Report:
+    def run(self, task: str, task_id: str | None = None) -> Report:
         """Run the loop against a disposable copy of the repo when possible, so
-        a failed attempt never mutates the caller's checkout."""
+        a failed attempt never mutates the caller's checkout.  Without an
+        explicit task_id every run gets its own, so ledger entries never collide.
+        """
+        task_id = task_id or f"task-{uuid.uuid4().hex[:12]}"
         workspace = Workspace(self.root)
         work = workspace.setup()
         try:

@@ -234,6 +234,14 @@ def test_repair_loop_uses_diagnostics(tmp_path):
     assert report.iterations == 2
 
 
+def test_runs_get_unique_task_ids(tmp_path):
+    root = str(tmp_path / "unique")
+    _make_demo_repo(root)
+    r1 = Orchestrator(root, ScriptedLLM()).run("fix it")
+    r2 = Orchestrator(root, ScriptedLLM()).run("fix it")
+    assert r1.task_id and r2.task_id and r1.task_id != r2.task_id
+
+
 def test_loop_unions_edits_across_iterations(tmp_path):
     from harness.orchestrator import EditOp
 
