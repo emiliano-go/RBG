@@ -1056,3 +1056,22 @@ def test_wilson_ci_and_metric_intervals(tmp_path, monkeypatch):
     r = train_from_ledger(root, index=idx).metrics["risk"]
     assert len(r["conformal_coverage_ci"]) == 2
     assert len(r["positive_rate_ci"]) == 2
+
+
+# -- selector labels are regression evidence, not historical failure -------- #
+def test_selector_labels_mark_only_new_regressions():
+    from harness.training import selector_examples
+    entries = [
+        {"component": "test_selector", "task_id": "t0",
+         "result": {"changed_symbols": ["a"]}},
+        {"component": "verifier", "task_id": "t0", "result": {"outcomes": [
+            {"test_id": "x", "status": "passed"},
+            {"test_id": "y", "status": "failed"}]}},
+        {"component": "test_selector", "task_id": "t1",
+         "result": {"changed_symbols": ["a"]}},
+        {"component": "verifier", "task_id": "t1", "result": {"outcomes": [
+            {"test_id": "x", "status": "failed"},
+            {"test_id": "y", "status": "failed"}]}},
+    ]
+    pairs = [(e[2], e[-1]) for e in selector_examples(entries)]
+    assert pairs == [("x", 0), ("y", 1), ("x", 1), ("y", 0)]  # y already red at t1

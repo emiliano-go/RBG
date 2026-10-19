@@ -106,24 +106,55 @@ def test_histories(entries: list[dict]) -> dict[str, list[bool]]:
     return hist
 
 
+def _regression_outcomes(entries: list[dict]):
+    """Per task, label each test outcome as regression evidence.
+
+    A test is a positive example (worth selecting) when it *fails now but had
+    not failed earlier in the ledger* -- i.e. the change is what broke it.  A
+    test that was already red, or that passes, is labelled 0; a historical
+    failure is not evidence that a change needs this test.  Only the latest
+    verifier entry per task is used, matching the per-task join elsewhere.
+
+    Returns ``(by_task, hist)`` where ``by_task[task_id]`` is a list of
+    ``(test_id, label, duration_s)`` and ``hist`` is the ordered pass/fail
+    history per test.
+    """
+    ranks = _by_task(entries, "test_selector")
+    last: dict[str, int] = {}
+    for i, e in enumerate(entries):
+        if e.get("component") == "verifier":
+            last[e.get("task_id", "")] = i
+    failed: dict[str, bool] = {}
+    hist: dict[str, list[bool]] = {}
+    by_task: dict[str, list] = {}
+    for i, e in enumerate(entries):
+        tid = e.get("task_id", "")
+        if e.get("component") != "verifier" or last.get(tid) != i or tid not in ranks:
+            continue
+        items = []
+        for o in e.get("result", {}).get("outcomes", []):
+            path = o.get("test_id", "")
+            passed = o.get("status") == "passed"
+            label = 1 if (not passed and not failed.get(path, False)) else 0
+            items.append((path, label, passed, o.get("duration_s", 1.0) or 1.0))
+        by_task[tid] = items
+        for path, _label, passed, _dur in items:
+            hist.setdefault(path, []).append(passed)
+            if not passed:
+                failed[path] = True
+    return by_task, hist
+
+
 def selector_examples(entries: list[dict]):
     ranks = _by_task(entries, "test_selector")
-    verifiers = _by_task(entries, "verifier")
-    hist = test_histories(entries)
+    outcomes, hist = _regression_outcomes(entries)
     out = []
     for tid, r in ranks.items():
         symbols = set(s.lower() for s in r.get("result", {}).get("changed_symbols", []))
-        if not symbols:
+        if not symbols or tid not in outcomes:
             continue
-        outcomes = verifiers.get(tid, {}).get("result", {}).get("outcomes", [])
-        if not outcomes:
-            continue
-        for o in outcomes:
-            path = o.get("test_id", "")
-            test_syms = set(tokenize(path))
-            label = 0 if o.get("status") == "passed" else 1
-            out.append((symbols, test_syms, path, o.get("duration_s", 1.0) or 1.0,
-                        hist.get(path, []), label))
+        for path, label, _passed, duration in outcomes[tid]:
+            out.append((symbols, set(tokenize(path)), path, duration, hist.get(path, []), label))
     return out
 
 
@@ -147,19 +178,16 @@ def reranker_examples(entries: list[dict], index: RepoIndex):
 
 def impact_examples(entries: list[dict], index: RepoIndex):
     ranks = _by_task(entries, "test_selector")
-    verifiers = _by_task(entries, "verifier")
+    outcomes, _ = _regression_outcomes(entries)
     out = []
     for tid, r in ranks.items():
         symbols = r.get("result", {}).get("changed_symbols", [])
-        outcomes = verifiers.get(tid, {}).get("result", {}).get("outcomes", [])
-        if not symbols or not outcomes:
+        if not symbols or tid not in outcomes:
             continue
         for sym in symbols:
             fanout = len(index.callers_of(sym))
-            for o in outcomes:
-                path = o.get("test_id", "")
-                label = 0.0 if o.get("status") == "passed" else 1.0
-                out.append((sym, path, set(tokenize(path)), fanout, label))
+            for path, label, _passed, _dur in outcomes[tid]:
+                out.append((sym, path, set(tokenize(path)), fanout, float(label)))
     return out
 
 
