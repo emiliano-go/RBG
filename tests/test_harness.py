@@ -503,10 +503,23 @@ def test_orchestrator_uses_learned_risk_in_shadow(tmp_path):
     X = rng.normal(size=(200, 4))
     y = (X[:, 0] > 0).astype(float)
     learned = LearnedModels(policy=Policy().train_risk(X.tolist(), y.tolist()))
+    learned.validated = True  # benchmark-validated heads may drive the decision
     root = str(tmp_path / "repo")
     _make_demo_repo(root)
     rep = Orchestrator(root, ScriptedLLM(), learned=learned).run("fix discount", task_id="lr1")
     assert rep.decision["risk"]["source"] == "gbdt"
+
+
+def test_learned_risk_stays_in_shadow_until_validated(tmp_path):
+    rng = np.random.default_rng(5)
+    X = rng.normal(size=(200, 4))
+    y = (X[:, 0] > 0).astype(float)
+    learned = LearnedModels(policy=Policy().train_risk(X.tolist(), y.tolist()))
+    root = str(tmp_path / "repo")
+    _make_demo_repo(root)
+    rep = Orchestrator(root, ScriptedLLM(), learned=learned).run("fix discount", task_id="sh1")
+    assert rep.decision["risk"]["source"] == "rule"
+    assert "learned_risk_in_shadow" in rep.decision["reason_codes"]
 
 
 def test_flaky_rerun_recovers_instead_of_failing(tmp_path):

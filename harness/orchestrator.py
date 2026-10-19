@@ -158,8 +158,10 @@ class Orchestrator:
                 ood = self.learned.conformal.ood_score(feats.vector()) > self.learned.ood_threshold
                 if ood:
                     uncertainty = 1.0  # spec 3.2/5.3: OOD input -> conservative fallback
-        decision = self.policy.decide(feats, uncertainty=uncertainty,
-                                      use_learned=bool(self.learned and self.learned.risk_trained))
+        trust_learned = bool(self.learned and self.learned.risk_trained and self.learned.validated)
+        decision = self.policy.decide(feats, uncertainty=uncertainty, use_learned=trust_learned)
+        if self.learned and self.learned.risk_trained and not self.learned.validated:
+            decision.reason_codes.append("learned_risk_in_shadow")
         if ood:
             decision.reason_codes.append("ood_input")
             decision.fallback = "deterministic_high_coverage"

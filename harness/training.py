@@ -44,6 +44,9 @@ class LearnedModels:
     drift: dict = field(default_factory=dict)
     ood_threshold: float | None = None
     reference: dict | None = None
+    # A learned head is shadow-only until a benchmark proves it beats the
+    # deterministic policy; nothing in training sets this, only the benchmark.
+    validated: bool = False
 
     @property
     def risk_trained(self) -> bool:
