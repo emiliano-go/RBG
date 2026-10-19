@@ -239,12 +239,15 @@ Requires Python 3.12+ and [libSQL](https://github.com/tursodatabase/libsql)
 (`pip install libsql`); only `numpy` is needed beyond that.
 
 ```bash
+# install the package (adds the `rbg` and `rbg-mcp` console scripts)
+pip install -e '.[dev]'
+
 # run the end-to-end demo on a throwaway repo
-python3 -m harness demo
+rbg demo
 
 # index a repo and retrieve context
-python3 -m harness index /path/to/repo
-python3 -m harness retrieve /path/to/repo "where are edits applied"
+rbg index /path/to/repo
+rbg retrieve /path/to/repo "where are edits applied"
 
 # measure the retriever
 python3 -m eval.effectiveness /path/to/repo --sample 200

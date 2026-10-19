@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rbg-harness"
+version = "0.1.0"
+description = "One main LLM plus deterministic control-plane, hybrid retrieval, sandboxed verification, and small learned models."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy",
+    "libsql",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+rbg = "harness.__main__:main"
+rbg-mcp = "harness.mcp_server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["harness", "eval"]
