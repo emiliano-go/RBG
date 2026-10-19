@@ -18,7 +18,7 @@ rank tests, run checks, train the models, and read store/drift stats.
 ## Contents
 
 - [Architecture](#architecture)
-- [MCP tools](#mcp-tools) — all 15, with arguments and returns
+- [MCP tools](#mcp-tools) — all 25, with arguments and returns
 - [Models](#models) — every learned model and statistical component
 - [Retrieval](#retrieval)
 - [The control loop](#the-control-loop)
@@ -55,6 +55,7 @@ to a repository; the server indexes it lazily and caches the index per revision.
 |---|---|---|
 | `search_code` | `root`, `query`, `limit=10`, `include`, `exclude` | Ranked code hits (path, symbol, lines, snippet) from the hybrid retriever, with `include`/`exclude` glob filters applied before fusion. |
 | `retrieve_context` | `root`, `query`, `limit=8`, `expand=true`, `include`, `exclude` | A bounded, source-grounded context bundle with provenance (path, lines, content hash, commit). `expand` pulls neighbouring/caller context. |
+| `read_chunk` | `root`, `chunk_id` | The full text of one indexed chunk by id, for when a capped discovery snippet is not enough. |
 | `find_symbol` | `root`, `name`, `exact=false`, `path`, `kind` | Definition location(s) plus every referencing file. `path` filters definition paths by glob; `kind` filters `function`/`class`/`constant`. |
 | `get_change_impact` | `root`, `symbols` | Predicted **and** graph-derived impact scope: referenced files, likely tests, fan-out. Advisory. |
 | `rank_tests` | `root`, `changed_symbols`, `limit=20` | Candidate tests ranked by regression-detection value, each with evidence (`covers_changed_symbol`, …), predicted relevance/flakiness and duration. Mandatory suites are flagged, never skipped. Advisory. |
@@ -63,7 +64,12 @@ to a repository; the server indexes it lazily and caches the index per revision.
 | `get_task_status` | `root`, `task_id` | Status, verified gates, and recorded checks for a task handle. |
 | `propose_patch` | `root`, `path`, `content` | Validates a patch proposal (syntax/shape) and returns the verdict. **Does not apply it.** |
 | `train_models` | `root` | Trains risk, selector, reranker and impact models from the ledger; returns metrics and calibration state. |
-| `plan_audit` | `root`, `plan_text`, `task=""`, `changed_files` | Parses a free-text plan into steps, computes **scope drift** (planned-but-unchanged / changed-but-unplanned) and a **completeness audit** (callers of changed symbols neither edited nor retrieved). Advisory. |
+| `plan_audit` | `root`, `plan_text`, `task=""`, `changed_files`, `task_id` | With `task_id`, returns the stored JSON plan and its status rollup. Otherwise parses free text into steps and computes **scope drift** and a **completeness audit**. Advisory. |
+| `plan_create` | `root`, `task_id`, `title`, `sections` | Creates the server-owned JSON plan for `(root, task_id)`; versions start at 1. |
+| `plan_append` / `plan_attach` | `root`, `task_id`, `section`, `parent_id` | Appends a top-level section or nests one under an existing section (depth cap 5). |
+| `plan_complete` | `root`, `task_id`, `section_id`, `status`, `evidence`, `validation` | Marks a section complete; the `validation` verdict is the model gate. Completion rolls up to parents. |
+| `plan_modify` / `plan_note` / `plan_check` | `root`, `task_id`, `section_id`, … | Edit fields, add a note, or record a named check on a section. |
+| `plan_get` / `plan_tree` | `root`, `task_id`, `section_id` | Read one section or the whole rollup tree. |
 | `get_calibration` | `root` | Conformal calibration state and training metrics (coverage, ECE, thresholds). Advisory. |
 | `check_drift` | `root` | Time-ordered drift / OOD check over the execution ledger: PSI per feature, calibration drift, OOD rate. Advisory. |
 | `db_stats` | `root` | libSQL store statistics: persisted chunks, vectors, ledger rows and model artefacts. |
@@ -143,9 +149,9 @@ Exposed as the `check_drift` tool and folded into `get_calibration`.
 
 | Component | Role |
 |---|---|
-| **BM25** | Lexical ranking over tokenised chunks. |
+| **FTS5 / BM25** | Lexical ranking from libSQL's `chunks_fts` index (BM25), with an in-memory BM25 fallback. |
 | **DenseEncoder** | Deterministic hashing-based dense embedding (`fit`/`encode`), so runs are reproducible across processes. |
-| **LSIEncoder** | Truncated-SVD latent semantic indexing over the chunk corpus. |
+| **LSIEncoder** | Truncated-SVD latent semantic indexing over the chunk corpus; `refresh` re-embeds new chunks against the existing projector (warm start, no SVD). |
 | **HybridRetriever** | Fuses the ranked lists with reciprocal-rank fusion, applies **path-aware weighting** (source `1.0` > docs `0.6` > tests `0.4`), a symbol-match boost, and optional MMR diversification. Over-fetches ×2 before filtering by `include`/`exclude` globs. |
 | **Reranker** | Optional learned final-stage reordering (see Models). |
 
@@ -188,9 +194,18 @@ The `Report` carries `plan`, `drift` (per stage + per iteration) and
 
 ## Plan + step-level drift
 
-`harness/plan.py`. The main LLM still returns a free-text plan; the harness
-parses it into concrete steps and checks it after every step. Deterministic —
-no new model, no extra LLM call.
+`harness/plan.py`. There are two paths:
+
+- The orchestrator still accepts the main LLM's **free-text** plan, parses it
+  into concrete steps, and checks it after every step.
+- Over MCP, the **plan is a server-owned JSON document** keyed by
+  `(root, task_id)`: `PlanDocument`/`PlanSection` with an explicit depth cap,
+  status rollup, and a completion gate that requires evidence. Every mutation
+  is root-authorized, containment-checked, version-bumped, and written to the
+  ledger. There is no plan-file edit path, so an assistant can change the plan
+  without regenerating it.
+
+The checks below are deterministic — no new model, no extra LLM call.
 
 - **`parse_plan(text, known_files)`** — each line is a step (leading `-`, `*`,
   `1.`, `Step 1:` stripped). File tokens are recorded **only if they exist in
@@ -204,7 +219,8 @@ no new model, no extra LLM call.
 - **`format_guidance(plan, drift)`** — repair-loop guidance for missing steps.
 
 Public API: `Plan`, `PlanStep`, `Drift`, `parse_plan`, `scope_drift`,
-`audit_completion`. Exposed as the `plan_audit` tool.
+`audit_completion`, plus `PlanDocument`/`PlanSection`/`PlanEditor` for the
+stored document. Exposed as `plan_audit` and the `plan_*` toolset.
 
 ---
 
@@ -213,21 +229,33 @@ Public API: `Plan`, `PlanStep`, `Drift`, `parse_plan`, `scope_drift`,
 ```
 harness/
   index.py        repo indexing: symbols, chunks, call graph
-  db.py           libSQL/Turso store (chunks, vectors, ledger, models)
-  retrieval.py    BM25 + dense + LSI hybrid retrieval, reranker
+  db.py           libSQL/Turso store (chunks, vectors, plans, ledger, models)
+  retrieval.py    FTS5 + dense + LSI hybrid retrieval, reranker
   models.py       learned models + the action menu
   training.py     train every model from the ledger
   verify.py       sandbox, pytest parsing, the ledger
+  isolation.py    bwrap/nsjail probe and argv wrapping
+  paths.py        containment checks (resolve-within)
+  workspace.py    disposable git worktree for the edit/verify loop
+  status.py       evidence-derived terminal state
+  checks.py       language-aware compile/test commands
+  providers.py    OpenAI-compatible provider + recorded-session replay
   drift.py        PSI / feature-shift / OOD drift reports
-  plan.py         structured plans + step-level drift checks
+  plan.py         JSON plans, plan editing, step-level drift checks
   orchestrator.py the control loop (the "harness")
-  mcp_server.py   MCP surface (15 tools)
-  __main__.py     demo CLI
+  mcp_server.py   MCP surface (25 tools)
+  __main__.py     CLI: demo, replay, index, retrieve, eval
 eval/
+  benchmark.py      configs, metrics, and the deterministic benchmark
   effectiveness.py  retrieval + test-selection metrics (Recall@k, MRR)
-  perf.py           tool latency benchmark
+  perf.py           tool latency benchmark (p50/p95 + budget gate)
+  suites/smoke/     3-task suite run in CI
+  suites/curated/   50 verified bugfix tasks + build.py --check
+examples/replay/   buggy module + test + recorded transcript (no key)
 tests/
   test_harness.py   end-to-end suite
+  test_sandbox.py   containment + isolation
+  test_status.py    evidence-derived status
 mcp_main.py       stdio launcher for the MCP server
 ```
 
@@ -285,3 +313,8 @@ retrieval causally rather than assuming it.
 Experimental. The deterministic baseline (index, retrieval, gates, ledger)
 runs without any model service; the learned components train from recorded
 runs and stay advisory — the compile/test gates remain authoritative.
+
+`bwrap` (or `nsjail`) is required: when no isolation backend probes successfully
+the harness refuses to run unless `HARNESS_ALLOW_UNISOLATED=1` is set, and an
+unisolated run is never reported as verified. CI installs bubblewrap and lifts
+Ubuntu 24.04's AppArmor userns restriction before running the 125-test suite.
