@@ -171,6 +171,8 @@ class Orchestrator:
         return decision, uncertainty, ood
 
     def _discover_tests(self) -> list[dict]:
+        if not self.verifier.toolchain().is_python:
+            return []
         res = self.sandbox.run([self.sandbox.python, "-m", "pytest", "--collect-only", "-q"])
         tests: list[dict] = []
         for line in res.stdout.splitlines():
@@ -268,19 +270,20 @@ class Orchestrator:
             self.retriever = self._retriever()
 
             check = self.verifier.compile_check(changed)
-            report.checks_run.append({"name": "compile", **check.to_dict()})
-            self._log("verifier", {"name": "compile", **check.to_dict()},
-                      model_name="py_compile", task_id=task_id,
-                      latency_ms=check.duration_ms)
+            if check is not None:
+                report.checks_run.append({"name": "compile", **check.to_dict()})
+                self._log("verifier", {"name": "compile", **check.to_dict()},
+                          model_name="py_compile", task_id=task_id,
+                          latency_ms=check.duration_ms)
             drift = scope_drift(typed, changed)
             report.drift.append({"stage": "step", "iteration": iteration, **drift.to_dict()})
             self._log("plan_drift", {"iteration": iteration, **drift.to_dict()},
                       model_name="scope-drift-v1", task_id=task_id,
                       reasons=["missing_steps"] if drift.missing else [])
-            if check.ok and drift.ok():
+            if (check is None or check.ok) and drift.ok():
                 break
             parts = []
-            if not check.ok:
+            if check is not None and not check.ok:
                 parts.append(check.stderr or check.stdout)
                 report.failures = [f"compile: iteration {iteration}"]
             parts.append(format_guidance(typed, drift))

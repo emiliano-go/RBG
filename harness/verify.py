@@ -17,6 +17,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from .checks import Toolchain, compile_command, detect, runner_argv
 from .isolation import Isolation, IsolationUnavailable, select as select_isolation
 from .paths import resolve_within
 
@@ -155,18 +156,30 @@ def parse_pytest(output: str) -> list[TestOutcome]:
 
 
 class Verifier:
-    """Conventional verification gates (spec 5.1, 6.6-6.9)."""
+    """Conventional verification gates (spec 5.1, 6.6-6.9).  Commands come from
+    the detected :mod:`harness.checks` toolchain, so a non-Python repository is
+    checked with its own tools rather than being silently untouched."""
 
     def __init__(self, sandbox: Sandbox) -> None:
         self.sandbox = sandbox
+        self._toolchain: Toolchain | None = None
 
-    def compile_check(self, paths: list[str]) -> CommandResult:
-        targets = list(paths) or ["."]
-        return self.sandbox.run([self.sandbox.python, "-m", "py_compile", *targets])
+    def toolchain(self) -> Toolchain:
+        if self._toolchain is None:
+            self._toolchain = detect(self.sandbox.root, python=self.sandbox.python)
+        return self._toolchain
+
+    def compile_check(self, paths: list[str]) -> CommandResult | None:
+        """None when the project has no compile step (an unverified gate, not a
+        green one)."""
+        cmd = compile_command(self.toolchain(), self.sandbox.python, paths)
+        return self.sandbox.run(cmd) if cmd else None
 
     def typecheck_available(self) -> bool:
-        """True when the interpreter can import a type checker, so a missing
-        checker is reported as unverified rather than silently scored clean."""
+        """True when the toolchain has a type checker, so a missing checker is
+        reported as unverified rather than silently scored clean."""
+        if not self.toolchain().is_python:
+            return False
         return self.sandbox.run([self.sandbox.python, "-c", "import mypy"]).ok
 
     def typecheck(self, paths: list[str] | None = None) -> CommandResult:
@@ -175,10 +188,13 @@ class Verifier:
             [self.sandbox.python, "-m", "mypy", *targets, "--ignore-missing-imports"])
 
     def run_tests(self, test_paths: list[str] | None = None, timeout_s: int = 120) -> tuple[CommandResult, list[TestOutcome]]:
-        sel = list(test_paths) if test_paths else []
-        res = self.sandbox.run(
-            [self.sandbox.python, "-m", "pytest", *sel, "-q", "-rA", "--no-header"],
-            timeout_s=timeout_s)
+        cmd = runner_argv(self.toolchain(), self.sandbox.python, test_paths)
+        if not cmd:
+            # No applicable test runner: a synthetic "nothing collected" result
+            # (exit 5), so the tests gate is recorded unverified, never passed.
+            return CommandResult("(no test command for this project)", self.sandbox.root,
+                                 5, "", "", 0), []
+        res = self.sandbox.run(cmd, timeout_s=timeout_s)
         return res, parse_pytest(res.stdout + "\n" + res.stderr)
 
 
