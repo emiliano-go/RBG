@@ -466,5 +466,5 @@ Closing the gaps the evaluation found after Phase 2.
 | C1 make model validation real: `rule_risk`, out-of-sample Platt, `validation:learned` in `meta`, `rbg validate-models`, `ledger_farm.py`, `get_calibration.validated` | **done** | temporal 60/20/20, learned Brier 0.0004 vs rule 0.3665 → promoted; 130 tests |
 | C2 hard retrieval suite (multi-file + distractors, Recall@1, ablation) | **done** | 54 tasks verified; hard hybrid recall@1 0.259 > lexical 0.241 > dense 0.241; 131 tests |
 | C3 prove `plan_audit` causally (`PartialLLM` A/B) | **done** | partial-noaudit 0/8 vs partial-audit 8/8 on `suites/multifile` |
-| C4 `eval/perf.py --budget-ms` semantics | pending | |
+| C4 `eval/perf.py --budget-ms` semantics | **done** | unset budget reports `ok:null`; set budget grades and exits 2 |
 | C5 SWE-bench Lite retrieval-only adapter | pending | |

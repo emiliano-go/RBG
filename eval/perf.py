@@ -149,12 +149,26 @@ def bench_tools(root: str, index: RepoIndex, repeat: int) -> dict:
     return out
 
 
+def budget_verdict(tools: dict, budget_ms: float | None) -> dict:
+    """Grade tool p95 latencies against a budget, or abstain when none is set.
+
+    ``ok=None`` means the question was never asked: reporting ``True`` for an
+    unset budget would read as a passed check when nothing was measured.
+    """
+    worst = max((m["p95_ms"] for m in tools.values()), default=0.0)
+    if budget_ms is None:
+        return {"budget_ms": None, "worst_p95_ms": worst, "over_budget": [], "ok": None}
+    over = sorted(name for name, m in tools.items() if m["p95_ms"] > budget_ms)
+    return {"budget_ms": budget_ms, "worst_p95_ms": worst, "over_budget": over, "ok": not over}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("repo")
     ap.add_argument("--repeat", type=int, default=7)
-    ap.add_argument("--budget-ms", type=float, default=0.0,
-                    help="fail (exit 2) if any tool's p95 latency exceeds this")
+    ap.add_argument("--budget-ms", type=float, default=None,
+                    help="fail (exit 2) if any tool's p95 latency exceeds this; "
+                         "omit to report latencies without grading them")
     ap.add_argument("--out", default="")
     args = ap.parse_args()
     root = os.path.abspath(args.repo)
@@ -168,18 +182,12 @@ def main() -> int:
         "models": bench_models(idx, args.repeat),
         "tools": bench_tools(root, idx, args.repeat),
     }
-    over = {name: m["p95_ms"] for name, m in report["tools"].items()
-            if args.budget_ms and m["p95_ms"] > args.budget_ms}
-    report["latency_budget"] = {
-        "budget_ms": args.budget_ms,
-        "worst_p95_ms": max((m["p95_ms"] for m in report["tools"].values()), default=0.0),
-        "over_budget": sorted(over), "ok": not over,
-    }
+    report["latency_budget"] = budget_verdict(report["tools"], args.budget_ms)
     print(json.dumps(report, indent=2))
     if args.out:
         with open(args.out, "w") as fh:
             json.dump(report, fh, indent=2)
-    return 2 if over else 0
+    return 2 if report["latency_budget"]["ok"] is False else 0
 
 
 if __name__ == "__main__":

@@ -1232,6 +1232,13 @@ def test_perf_bench_reports_p95_and_budget(tmp_path):
     assert {"p50_ms", "p95_ms", "median_ms", "repeat"} <= set(rep)
     assert rep["p95_ms"] >= rep["p50_ms"]
 
+    tools = {"search_code": {"p95_ms": 12.0}, "db_stats": {"p95_ms": 3.0}}
+    assert perf.budget_verdict(tools, None)["ok"] is None
+    assert perf.budget_verdict(tools, 1.0)["ok"] is False
+    assert perf.budget_verdict(tools, 1.0)["over_budget"] == ["db_stats", "search_code"]
+    graded = perf.budget_verdict(tools, 20.0)
+    assert graded["ok"] is True and graded["over_budget"] == []
+
 
 def test_clean_query_dedupes_and_caps():
     from harness.retrieval import _QUERY_TERM_CAP, _clean_query
