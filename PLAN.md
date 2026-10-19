@@ -468,3 +468,106 @@ Closing the gaps the evaluation found after Phase 2.
 | C3 prove `plan_audit` causally (`PartialLLM` A/B) | **done** | partial-noaudit 0/8 vs partial-audit 8/8 on `suites/multifile` |
 | C4 `eval/perf.py --budget-ms` semantics | **done** | unset budget reports `ok:null`; set budget grades and exits 2 |
 | C5 SWE-bench Lite retrieval-only adapter | **done** | `eval/swebench_retrieval.py`: base_commit checkout, problem-statement query, file Recall@k/1 + MRR vs gold patch files, local-fixture test |
+
+---
+
+## Follow-up: learned model additions (task `learned-additions`)
+
+Four additions the evaluation identified as worth building. Constraint
+unchanged: still **one** generative coding LLM; every new component is
+retrieval, discriminative or conventional. `numpy` + `libsql` stay the only
+hard dependencies; anything needing a transformer is an optional extra.
+
+Build order and rationale: #2 first (smallest diff, directly targets the hard
+suite's recall@1 0.259), then #1 (closes the "verified ≠ correct" gap), then #4
+(validation only, no new head), then #3 (optional, gated on #2's retrieval
+gains proving insufficient).
+
+### N2 — Experience / fix memory over the ledger (zero new deps)
+
+Idea (SWE-Exp, arXiv:2507.23361): a bank of prior (issue → fix) experiences,
+retrieved by dense similarity, improves fault localisation and patch quality;
+**retrieving N=1 experience is optimal** (More is not better — quality beats
+quantity). We already record every run and already have a libSQL vector index.
+
+| Step | Change | File | Status |
+|---|---|---|---|
+| N2-1 | `experiences(id, task_id, repo_id, revision, query, outcome, summary, vector F32_BLOB(512))` + `experiences_idx` (libsql_vector_idx); `save_experience` / `search_experiences` (insert-only, drop-and-recreate discipline like `save_vectors`) | `harness/db.py` | **done** |
+| N2-2 | `experience_encoder()` — an **unfit** `DenseEncoder(512)` (idf defaults to 1.0, so it is deterministic and cross-repo comparable without a per-repo fit) | `harness/retrieval.py` | **done** |
+| N2-3 | `Orchestrator(use_experience=True)`: at intake, retrieve top-1 prior experience and prepend as a synthetic `Hit(reason="experience")`; at run end, write `(task → plan + files_changed + diff summary, outcome)` | `harness/orchestrator.py` | **done** |
+| N2-4 | A/B knob: `BenchConfig.use_experience` + `full-noexp` config; `ledger_farm --no-experience` (shared root ⇒ real cross-task effect) with `resolution_rate` | `eval/benchmark.py`, `eval/ledger_farm.py` | **done** |
+| N2-5 | Test: encoder unfit+deterministic; nearest-and-cap-at-1; orchestrator injects the prior experience | `tests/test_harness.py` | **done** (3 tests) |
+
+### N1 — Patch-correctness / overfitting classifier (zero new deps)
+
+The oracle is "tests passed"; an overfitting patch passes too (ODS,
+arXiv:1910.12057; Leopard/Panther, arXiv:2203.08912 — static engineered
+features + gradient boosting reach ~AUC 0.77–0.82). We reuse the existing
+regression label as the supervision proxy and add features the risk head does
+**not** have (otherwise it is redundant with `risk`).
+
+| Step | Change | File | Status |
+|---|---|---|---|
+| N1-1 | Label = "task has regression-evidence" from the existing `_regression_outcomes` | `harness/training.py` | **done** |
+| N1-2 | Static patch features: added/removed lines, deleted:added ratio, modifies/creates test files, new-symbol ratio, trivial-change ratio, patch↔context overlap | `harness/models.py` (`patch_features`) | **done** |
+| N1-3 | `PatchCorrectnessModel` (GBDT logloss); `patch_examples`; trained in `train_from_ledger` → `models.metrics["patch"]` | `harness/models.py`, `harness/training.py` | **done** |
+| N1-4 | Ledger component `patch_features` (always logged); orchestrator surfaces `report.patch_risk`, forces full suite + reason code `patch_regression_risk` when high | `harness/orchestrator.py` | **done** |
+| N1-5 | Test: test-editing patch scores higher; `patch_examples` labels a green→red test as 1 | `tests/test_harness.py` | **done** (2 tests) |
+
+### N4 — Predictive test selection validation (zero new deps)
+
+| Step | Change | File | Status |
+|---|---|---|---|
+| N4-1 | PTS operating point: `recall_at_third` (revealing tests recovered in the top suite-third) + `budget_tests` | `eval/effectiveness.py` | **done** |
+| N4-2 | Test: selector beats alphabetical at the third budget on a fixture | `tests/test_harness.py` | **done** |
+
+### N3 — Optional heavier retrievers (optional extra only)
+
+| Step | Change | File | Status |
+|---|---|---|---|
+| N3-1 | `[project.optional-dependencies] semantic = ["transformers", "torch"]` | `pyproject.toml` | **done** |
+| N3-2 | `harness/retrieval_heavy.py`: `CrossEncoderReranker` duck-typing `Reranker.rerank`, graceful linear fallback; `available()` guard. (Encoder slot deferred — larger interface, do it only if the reranker gain proves insufficient.) | `harness/retrieval_heavy.py` | **done** |
+| N3-3 | `--reranker heavy` adds a `hybrid+ce` mode; CI stays numpy-only (absent extra ⇒ fallback) | `eval/retrieval_ablation.py` | **done** |
+
+**Definition of done:** all four land behind their gates; `numpy`+`libsql`-only
+install still passes the full suite; each addition has one runnable check; the
+hard-suite ablation reports the retrieval/resolution delta for N2.
+
+**Measured (offline, no API key):**
+
+| Check | Result |
+|---|---|
+| Full suite (`pytest tests -q`) | 141 passed |
+| Retrieval ablation, hard suite (k=5) | lexical recall@1 0.241, dense 0.259, **hybrid 0.276** (recall@5 0.388, MRR 0.328) |
+| Experience A/B (`ledger_farm` curated, 15 tasks, shared root) | resolution_rate 0.5 with and without: **no delta by construction** |
+
+The experience A/B is flat because the farm's resolving configs are *oracles*:
+`OracleLLM` already holds the gold fix, so an injected prior experience cannot
+change the outcome, and `BlindLLM` edits only paths named in retrieval hits
+(the experience Hit's path is the synthetic `<prior-fix>`, not a real file).
+Experience recall is therefore proven at the unit level (injection + bank
+round-trip) and by design; a resolution delta needs a live generative model
+that reads context — the same reason the SWE-bench adapter is manual. The patch
+head likewise has no farm signal (oracle runs all pass, blind runs never reach
+the test stage), so it trains only on a ledger containing real regressions.
+
+**Latent limitations and prerequisites:**
+
+- **The experience bank needs a context-reading model to pay off.** The
+  plumbing (unfit 512-d encoder, N=1 recall, verified-only bank, synthetic
+  `Hit`) is complete and unit-tested, but its value is unmeasured offline.
+  First live-model run: replay the same tasks and compare resolution with
+  `full` vs `full-noexp`.
+- **The patch head is untrained on synthetic suites.** It ships as a
+  transparent heuristic (0.6·touches_tests + 0.4·trivial_ratio) and only
+  becomes a GBDT once the ledger holds green→red regressions. Its
+  `patch_features` component is logged on every run, so supervision accrues
+  automatically.
+- **N3's `hybrid+ce` mode is untested against a real cross-encoder.** CI and
+  the offline install never have `torch`, so `CrossEncoderReranker` always
+  takes the linear fallback here; the heavy path (`--reranker heavy`) is only
+  exercised where the `semantic` extra is installed.
+- **Heavy retrievers are opt-in only.** `numpy`+`libsql` remains the sole hard
+  dependency; `transformers`/`torch` live behind the `semantic` extra. Adding
+  the encoder slot (not just the reranker) stays deferred until a reranker
+  gain proves insufficient.

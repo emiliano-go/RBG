@@ -210,6 +210,108 @@ def test_end_to_end_demo_verifies(tmp_path):
     assert os.path.exists(os.path.join(root, "test_shop.py"))
 
 
+# -- experience memory (SWE-Exp) -------------------------------------------- #
+def test_experience_encoder_is_unfit_and_deterministic():
+    from harness.retrieval import EXPERIENCE_DIM, experience_encoder
+    enc = experience_encoder()
+    assert enc.dim == EXPERIENCE_DIM and enc.idf == {}  # unfit: no corpus stats
+    v = enc.encode("fix the discount calculation")
+    assert v.shape == (EXPERIENCE_DIM,)
+    assert np.array_equal(v, enc.encode("fix the discount calculation"))
+
+
+def test_experience_search_returns_nearest_and_caps_at_one(tmp_path):
+    from harness import db
+    from harness.retrieval import experience_encoder
+    store = db.Store(str(tmp_path / "exp"))
+    enc = experience_encoder()
+    for i, task in enumerate(["fix the discount calculation",
+                              "repair the invoice tax rounding"]):
+        store.save_experience(task_id=f"t{i}", repo_id="r", revision="rev",
+                              query=task, outcome="verified",
+                              summary=f"plan: {task}", vector=enc.encode(task))
+    hits = store.search_experiences(enc.encode("fix the discount calculation"), limit=1)
+    assert len(hits) == 1 and hits[0]["task_id"] == "t0"
+    store.close()
+
+
+def test_orchestrator_injects_prior_experience(tmp_path):
+    root = str(tmp_path / "exp-repo")
+    _make_demo_repo(root)
+    assert Orchestrator(root, ScriptedLLM()).run("fix the discount calculation",
+                                                 task_id="first").success
+    seen = {}
+
+    class Spy(ScriptedLLM):
+        def plan(self, task, context):
+            seen["paths"] = [h.path for h in context]
+            return super().plan(task, context)
+
+    Orchestrator(root, Spy()).run("fix the discount calculation", task_id="second")
+    assert Orchestrator.EXPERIENCE_PATH in seen["paths"]
+
+
+# -- patch correctness ------------------------------------------------------ #
+def test_patch_features_flag_test_edits_and_heuristic():
+    from harness.models import PATCH_FEATURE_NAMES, PatchCorrectnessModel, patch_features
+    clean = {"shop.py": ("def f():\n    return 1\n", "def f():\n    return 2\n")}
+    testy = {"tests/test_shop.py": ("def t():\n    assert f() == 1\n",
+                                    "def t():\n    assert f() == 2\n")}
+    i = PATCH_FEATURE_NAMES.index("touches_tests")
+    fc, ft = patch_features(clean, ["f"]), patch_features(testy, ["f"])
+    assert fc[i] == 0.0 and ft[i] == 1.0
+    assert PatchCorrectnessModel().predict(ft) > PatchCorrectnessModel().predict(fc)
+
+
+def test_patch_examples_label_from_regression_evidence():
+    from harness.training import patch_examples
+    entries = [
+        {"task_id": "A", "component": "patch_features",
+         "result": {"feature_vector": [0.0] * 11}},
+        {"task_id": "A", "component": "test_selector", "result": {"changed_symbols": ["f"]}},
+        {"task_id": "A", "component": "verifier",
+         "result": {"outcomes": [{"test_id": "t1", "status": "passed"}]}},
+        # B: a test that passed under A now fails -> regression evidence (label 1)
+        {"task_id": "B", "component": "patch_features",
+         "result": {"feature_vector": [1.0] * 11}},
+        {"task_id": "B", "component": "test_selector", "result": {"changed_symbols": ["g"]}},
+        {"task_id": "B", "component": "verifier",
+         "result": {"outcomes": [{"test_id": "t1", "status": "failed"}]}},
+    ]
+    X, y = patch_examples(entries)
+    assert list(y) == [0.0, 1.0]
+    assert X.shape == (2, 11)
+
+
+def test_test_selection_beats_alphabetical_at_third_budget(tmp_path):
+    from eval.effectiveness import eval_test_selection
+    fns = ["alpha_fn", "beta_fn", "gamma_fn", "delta_fn", "epsilon_fn"]
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "shop.py").write_text(
+        "\n".join(f"def {f}():\n    return '{f}'\n" for f in fns))
+    for i, f in enumerate(fns, 1):
+        (tmp_path / f"test_{i}.py").write_text(
+            f"from src.shop import {f}\n\ndef test_{f}():\n    assert {f}()\n")
+    idx = RepoIndex.build(str(tmp_path))
+    res = eval_test_selection(idx, sample=100)
+    assert res["budget_tests"] >= 1
+    sel, alpha = res["scores"]["selector"], res["scores"]["alpha"]
+    assert sel["recall_at_third"] >= alpha["recall_at_third"]
+    assert sel["recall_at_third"] >= 0.5
+
+
+def test_retrieval_heavy_falls_back_without_a_model(tmp_path, monkeypatch):
+    from harness import retrieval_heavy
+    monkeypatch.setenv("RBG_CROSS_ENCODER", "")
+    assert isinstance(retrieval_heavy.available(), bool)
+    idx = _repo(tmp_path)
+    hits = HybridRetriever(idx).retrieve("beta_helper", limit=5)
+    rr = retrieval_heavy.CrossEncoderReranker()
+    assert rr.model is None  # no runtime or no model -> linear fallback
+    out = rr.rerank("beta_helper", hits, idx.chunks)
+    assert [h.path for h in out] == [h.path for h in hits] and out
+
+
 def test_repair_loop_uses_diagnostics(tmp_path):
     from harness.orchestrator import EditOp
 
@@ -371,6 +473,13 @@ def test_mcp_root_within_allowlist_is_allowed(tmp_path, monkeypatch):
     monkeypatch.setenv("HARNESS_ALLOWED_ROOTS", str(tmp_path))
     out = _call("retrieve_context", {"root": root, "query": "discount", "limit": 1})
     assert out["result"]["isError"] is False
+
+
+def test_mcp_root_allowlist_of_filesystem_root_allows_any(tmp_path, monkeypatch):
+    root = str(tmp_path / "repo")
+    _make_demo_repo(root)
+    monkeypatch.setenv("HARNESS_ALLOWED_ROOTS", os.sep)
+    assert mcp_server._authorize_root(root) == os.path.realpath(root)
 
 
 def test_authorize_root_rejects_sibling_prefix(tmp_path, monkeypatch):

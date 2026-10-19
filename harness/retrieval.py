@@ -443,6 +443,22 @@ def encoder_from_state(state: dict, doc_vecs: np.ndarray) -> "DenseEncoder | LSI
     return DenseEncoder.from_state(state, doc_vecs)
 
 
+# Fixed width for the experience-memory vector index (harness/db.py).
+EXPERIENCE_DIM = 512
+
+
+def experience_encoder(dim: int = EXPERIENCE_DIM) -> DenseEncoder:
+    """Deterministic, *unfit* dense encoder for experience matching.
+
+    Left unfitted so every idf defaults to 1.0: the signed feature hash needs
+    no corpus statistics, so experiences written under one repo's vocabulary
+    are directly comparable with a query from another.  ponytail: hashing
+    stand-in for a code embedding, swap for SPLADE-Code only if retrieval gains
+    plateau.
+    """
+    return DenseEncoder(dim)
+
+
 def mmr(query_vec: np.ndarray, doc_vecs: np.ndarray, indices: list[int],
         k: int, lam: float = 0.7) -> list[int]:
     """Maximal Marginal Relevance selection (Carbonell & Goldstein, 1998).

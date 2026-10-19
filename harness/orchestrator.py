@@ -19,10 +19,11 @@ from typing import Protocol
 
 from . import db
 from .index import RepoIndex
-from .models import Policy, TestSelector, TaskFeatures, extract_features, select_action
+from .models import (Policy, TestSelector, TaskFeatures, extract_features,
+                     patch_features, select_action)
 from .paths import resolve_within
 from .plan import Plan, audit_completion, format_guidance, parse_plan, scope_drift
-from .retrieval import HybridRetriever, Hit, Reranker
+from .retrieval import EXPERIENCE_DIM, HybridRetriever, Hit, Reranker, experience_encoder
 from .status import Gates, TerminalState, derive_status, gate_state
 from .training import LearnedModels, test_histories
 from .verify import Ledger, Sandbox, TestOutcome, Verifier
@@ -62,6 +63,7 @@ class Report:
     plan: dict = field(default_factory=dict)
     drift: list[dict] = field(default_factory=list)
     completeness: dict = field(default_factory=dict)
+    patch_risk: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -71,7 +73,7 @@ class Report:
             "scope_reductions": self.scope_reductions, "decision": self.decision,
             "context_used": self.context_used, "iterations": self.iterations,
             "actions": self.actions, "plan": self.plan, "drift": self.drift,
-            "completeness": self.completeness,
+            "completeness": self.completeness, "patch_risk": self.patch_risk,
         }
 
 
@@ -80,10 +82,12 @@ class Orchestrator:
                  policy: Policy | None = None, selector: TestSelector | None = None,
                  learned: LearnedModels | None = None, use_reranker: bool = False,
                  max_iterations: int = 3, context_limit: int = 15,
-                 use_retrieval: bool = True, use_plan_audit: bool = True) -> None:
+                 use_retrieval: bool = True, use_plan_audit: bool = True,
+                 use_experience: bool = True) -> None:
         self.root = os.path.abspath(root)
         self.use_retrieval = use_retrieval
         self.use_plan_audit = use_plan_audit
+        self.use_experience = use_experience
         self.llm = llm
         self.learned = learned
         self.policy = (learned.policy if learned and learned.risk_trained
@@ -214,6 +218,59 @@ class Orchestrator:
             remaining.append(o)
         return remaining
 
+    # -- experience memory (SWE-Exp) --------------------------------------- #
+    EXPERIENCE_PATH = "<prior-fix>"
+
+    def _recall_experience(self, task: str, task_id: str) -> Hit | None:
+        """The single most similar prior fix (SWE-Exp: N=1 is optimal).
+
+        Returned as a synthetic context item so the one generative LLM sees how
+        a comparable issue was resolved.  Never raises: a missing experience
+        index degrades to ordinary retrieval.
+        """
+        try:
+            enc = experience_encoder(EXPERIENCE_DIM)
+            found = self.ledger.store.search_experiences(enc.encode(task), limit=1,
+                                                         exclude_task=task_id)
+        except Exception:
+            return None
+        if not found or not found[0].get("summary"):
+            return None
+        e = found[0]
+        content = f"PRIOR FIX ({e['outcome']}):\n{e['summary']}"
+        return Hit(self.EXPERIENCE_PATH, "", 0, 0, 0.0, "experience", "experience",
+                   "", content)
+
+    def _remember(self, task: str, task_id: str, report: Report,
+                  diffs: dict[str, tuple[str, str]], plan_text: str) -> None:
+        """Write a *verified* run as a reusable experience.
+
+        Only successes are banked: a failed patch is not a fix, and recalling it
+        would poison later tasks.  Best effort: an experience the bank cannot
+        store must never fail the task.
+        """
+        if not report.success or not report.files_changed:
+            return
+        parts = [plan_text.strip()[:600]]
+        parts.append("files: " + ", ".join(report.files_changed))
+        lines: list[str] = []
+        for before, after in diffs.values():
+            for line in difflib.unified_diff(before.splitlines(), after.splitlines(),
+                                             lineterm=""):
+                if line[:1] in "+-" and not line.startswith(("+++", "---")):
+                    lines.append(line)
+        if lines:
+            parts.append("diff:\n" + "\n".join(lines[:40]))
+        summary = "\n".join(p for p in parts if p)[:2000]
+        try:
+            self.ledger.store.save_experience(
+                task_id=task_id, repo_id=self.repo_id,
+                revision=self.index.revision if self.index else "",
+                query=task, outcome=report.status, summary=summary,
+                vector=experience_encoder(EXPERIENCE_DIM).encode(task))
+        except Exception:
+            pass
+
     def run(self, task: str, task_id: str | None = None) -> Report:
         """Run the loop against a disposable copy of the repo when possible, so
         a failed attempt never mutates the caller's checkout.  Without an
@@ -251,6 +308,10 @@ class Orchestrator:
             hits = hits[:self.context_limit]
             if self.use_reranker:
                 hits = Reranker().rerank(task, hits, self.index.chunks)[:self.context_limit]
+        if self.use_experience:
+            exp = self._recall_experience(task, task_id)
+            if exp is not None:
+                hits = [exp] + hits  # always seen first, even at context_limit
         report.context_used = len(hits)
         self._log("retriever", {"query": task, "candidates": [h.to_dict() for h in hits]},
                   model_name="hybrid-rrf-v1", task_id=task_id)
@@ -263,7 +324,8 @@ class Orchestrator:
         report.plan = typed.to_dict()
         self._log("plan", typed.to_dict(), model_name="plan-parse-v1", task_id=task_id)
         covered = set(typed.all_files())
-        uncovered = sorted({h.path for h in hits if h.path not in covered})
+        uncovered = sorted({h.path for h in hits
+                            if not h.path.startswith("<") and h.path not in covered})
         report.drift.append({"stage": "plan", "retrieval_uncovered": uncovered})
         diagnostics = ""
         diffs: dict[str, tuple[str, str]] = {}   # cumulative, original -> latest
@@ -320,6 +382,27 @@ class Orchestrator:
             changed_lines=self._diff_lines(diffs),
             dep_fanout=sum(len(self.index.callers_of(s)) for s in changed_symbols))
         decision, uncertainty, ood = self._assess(feats, report, task_id)
+
+        # 3c. static patch-correctness signal (spec: a passing test suite is not
+        # the same as a correct patch).  Features come from the diff the loop
+        # already holds; a high score forces the full suite rather than trusting
+        # the selected subset.
+        context_text = " ".join(h.content for h in hits if not h.path.startswith("<"))
+        pfeat = patch_features(diffs, changed_symbols, context_text)
+        self._log("patch_features", {"feature_vector": pfeat.tolist()},
+                  model_name="patch-features-v1", task_id=task_id)
+        if self.learned is not None:
+            patch_model = getattr(self.learned, "patch", None)
+            if patch_model is not None:
+                report.patch_risk = round(patch_model.predict(pfeat), 4)
+                if report.patch_risk >= 0.6:
+                    decision.verification["require_full_suite"] = True
+                    decision.reason_codes.append("patch_regression_risk")
+                    report.decision = decision.to_dict()
+                    self._log("patch", {"patch_risk": report.patch_risk,
+                                        "model": patch_model.version},
+                              model_name=patch_model.version, task_id=task_id,
+                              reasons=["patch_regression_risk"])
 
         # cheap type gate (spec 4 P0 / 5.3): run only when a checker exists, so
         # "verified" is never reported for a check that could not run.
@@ -403,6 +486,8 @@ class Orchestrator:
         report.status = state.value
         report.success = state is TerminalState.VERIFIED
 
+        if self.use_experience:
+            self._remember(task, task_id, report, diffs, plan_text)
         self._log("orchestrator", report.to_dict(), model_name="orchestrator-v1",
                   task_id=task_id, reasons=decision.reason_codes)
         return report

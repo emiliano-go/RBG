@@ -21,7 +21,7 @@ import numpy as np
 
 from .index import RepoIndex
 from .models import (FEATURE_NAMES, ChangeImpactModel, ConformalCalibrator,
-                     PlattScaler, Policy, TestSelector)
+                     PatchCorrectnessModel, PlattScaler, Policy, TestSelector)
 from .retrieval import Reranker, tokenize
 
 # Enough local rows to trust a repo-specific fit; below this the pooled tier
@@ -39,6 +39,7 @@ class LearnedModels:
     selector: TestSelector = field(default_factory=TestSelector)
     reranker: Reranker | None = None
     impact: ChangeImpactModel = field(default_factory=ChangeImpactModel)
+    patch: PatchCorrectnessModel = field(default_factory=PatchCorrectnessModel)
     conformal: ConformalCalibrator = field(default_factory=ConformalCalibrator)
     metrics: dict = field(default_factory=dict)
     drift: dict = field(default_factory=dict)
@@ -59,6 +60,10 @@ class LearnedModels:
     @property
     def impact_trained(self) -> bool:
         return self.impact.model is not None and self.impact.model.trained
+
+    @property
+    def patch_trained(self) -> bool:
+        return self.patch.model is not None and self.patch.model.trained
 
 
 def read_ledger(root: str) -> list[dict]:
@@ -192,6 +197,31 @@ def impact_examples(entries: list[dict], index: RepoIndex):
             for path, label, _passed, _dur in outcomes[tid]:
                 out.append((sym, path, set(tokenize(path)), fanout, float(label)))
     return out
+
+
+def patch_examples(entries: list[dict]):
+    """(X, y) for the patch-correctness head.
+
+    Label 1 = the task's patch has regression evidence: at least one test that
+    now fails but had not failed earlier in the ledger (``_regression_outcomes``).
+    Label 0 = no such evidence.  This is the honest proxy the oracle ("tests
+    passed") cannot give: a patch that passes its tests but breaks others is
+    exactly the overfitting case.  Kept distinct from the risk head, which
+    predicts task failure from *task* features rather than a bad patch from
+    *patch* features.
+    """
+    feats = _by_task(entries, "patch_features")
+    outcomes, _ = _regression_outcomes(entries)
+    X, y = [], []
+    for tid, f in feats.items():
+        vec = f.get("result", {}).get("feature_vector")
+        if not vec or tid not in outcomes:
+            continue
+        X.append(vec)
+        y.append(1.0 if any(lbl for _p, lbl, _passed, _dur in outcomes[tid]) else 0.0)
+    if not X:
+        return np.zeros((0, 0)), np.zeros(0)
+    return np.asarray(X, dtype=float), np.asarray(y, dtype=float)
 
 
 def _brier(model, X, y) -> float:
@@ -407,6 +437,11 @@ def train_from_ledger(root: str, index: RepoIndex | None = None, store=None) -> 
         models.impact = ChangeImpactModel().train(im)
         models.metrics["impact"] = {"n": len(im),
                                     "positive_rate": round(float(np.mean([e[-1] for e in im])), 4)}
+    px, py = patch_examples(entries)
+    if len(py) >= MIN_FIT and len(set(py.tolist())) > 1:
+        models.patch = PatchCorrectnessModel().train(px, py)
+        models.metrics["patch"] = {"n": len(py),
+                                   "positive_rate": round(float(py.mean()), 4)}
     # Drift/OOD monitoring over a time-ordered split of the ledger (spec 5.8, 8.3).
     from .drift import drift_report
     models.drift = drift_report(models, entries, feature_names=FEATURE_NAMES).to_dict()

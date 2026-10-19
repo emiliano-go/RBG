@@ -235,9 +235,13 @@ def eval_test_selection(index: RepoIndex, sample: int, seed: int = 0) -> dict:
     rng = random.Random(seed)
     rng.shuffle(candidates)
     candidates = candidates[:sample]
-    agg = {name: {"r5": 0.0, "r10": 0.0, "mrr": 0.0, "prec10": 0.0, "cover": 0.0, "n": 0}
+    agg = {name: {"r5": 0.0, "r10": 0.0, "third": 0.0, "mrr": 0.0, "prec10": 0.0, "cover": 0.0, "n": 0}
            for name in ("selector", "alpha", "random")}
     alpha_order = [t["test_id"] for t in sorted(tests, key=lambda t: t["test_id"])]
+    # Predictive test selection operating point (Facebook PTS): how many
+    # failure-revealing tests land in the top third of the suite, the budget at
+    # which PTS reports >95% of failures.
+    budget = max(1, len(alpha_order) // 3)
     for sym in candidates:
         revealing = rev[sym]
         orders = {
@@ -250,6 +254,7 @@ def eval_test_selection(index: RepoIndex, sample: int, seed: int = 0) -> dict:
             a["n"] += 1
             a["r5"] += sum(1 for t in order[:5] if t in revealing) / len(revealing)
             a["r10"] += sum(1 for t in order[:10] if t in revealing) / len(revealing)
+            a["third"] += sum(1 for t in order[:budget] if t in revealing) / len(revealing)
             a["prec10"] += sum(1 for t in order[:10] if t in revealing) / 10
             first = next((i for i, t in enumerate(order) if t in revealing), None)
             a["mrr"] += 1.0 / (first + 1) if first is not None else 0.0
@@ -261,12 +266,14 @@ def eval_test_selection(index: RepoIndex, sample: int, seed: int = 0) -> dict:
         out[name] = {
             "recall@5": round(min(a["r5"] / n, 1.0), 4),
             "recall@10": round(min(a["r10"] / n, 1.0), 4),
+            "recall_at_third": round(min(a["third"] / n, 1.0), 4),
             "precision@10": round(a["prec10"] / n, 4),
             "mrr": round(a["mrr"] / n, 4),
             "suite_fraction_to_cover_all": round(a["cover"] / n, 4),
             "n": a["n"],
         }
-    return {"n_tests": len(tests), "n_changed_symbols": len(candidates), "scores": out}
+    return {"n_tests": len(tests), "n_changed_symbols": len(candidates),
+            "budget_tests": budget, "scores": out}
 
 
 def main() -> int:

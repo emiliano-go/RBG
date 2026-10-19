@@ -112,6 +112,14 @@ class Store:
         cur.execute("""CREATE TABLE IF NOT EXISTS models(
             name TEXT PRIMARY KEY, revision TEXT, version TEXT,
             payload BLOB, metrics TEXT, updated_at REAL)""")
+        # Experience memory (SWE-Exp): one row per task run, retrieved by dense
+        # similarity.  Vector width is fixed so experiences written by any repo
+        # are directly comparable (see EXPERIENCE_DIM / experience_encoder).
+        cur.execute("""CREATE TABLE IF NOT EXISTS experiences(
+            id INTEGER PRIMARY KEY, task_id TEXT, repo_id TEXT, revision TEXT,
+            query TEXT, outcome TEXT, summary TEXT, vector F32_BLOB(512))""")
+        cur.execute("CREATE INDEX IF NOT EXISTS experiences_idx "
+                    "ON experiences(libsql_vector_idx(vector))")
         cur.commit()
 
     def _attach_global(self, global_url: str | None) -> None:
@@ -278,6 +286,51 @@ class Store:
         out = [(int(r[0]), float(r[1])) for r in rows if r[1] is not None]
         out.sort(key=lambda kv: kv[1])
         return out
+
+    # -- experience memory (SWE-Exp) -------------------------------------- #
+    def save_experience(self, *, task_id: str, repo_id: str, revision: str,
+                        query: str, outcome: str, summary: str,
+                        vector: np.ndarray) -> None:
+        """Append one (issue -> fix) experience, keyed by dense task vector.
+
+        Insert-only: the rowid is autoincremented, so a libsql vector-index
+        shadow row from a re-saved task is never re-inserted.  task_ids are
+        unique per run by default, so duplicates are a non-issue in practice.
+        ponytail: append-only, no dedupe; a replayed task may leave one stale
+        row, harmless at N=1 retrieval.
+        """
+        vec = np.asarray(vector, dtype=float).ravel()
+        if vec.size != 512:
+            raise ValueError(f"experience vector must be 512-dim, got {vec.size}")
+        self.conn.execute(
+            "INSERT INTO experiences(task_id, repo_id, revision, query, outcome, "
+            "summary, vector) VALUES(?,?,?,?,?,?,?)",
+            (task_id, repo_id, revision, query, outcome, summary, _floats_to_blob(vec)))
+        self.commit()
+
+    def search_experiences(self, query_vec: np.ndarray, limit: int = 1,
+                           exclude_task: str = "") -> list[dict]:
+        """Nearest prior experiences by cosine similarity, best first.
+
+        ``limit=1`` is deliberate: SWE-Exp found a single retrieved experience
+        optimal, extra ones adding noise.  Join back to the table for the
+        payload (index-only projection yields NULLs), same as ``vector_search``.
+        """
+        qv = np.asarray(query_vec, dtype=float).ravel()
+        if qv.size != 512 or not np.any(qv):
+            return []
+        blob = _floats_to_blob(qv)
+        rows = self.conn.execute(
+            "SELECT e.task_id, e.repo_id, e.outcome, e.summary, "
+            "vector_distance_cos(e.vector, ?) AS d "
+            "FROM vector_top_k('experiences_idx', ?, ?) t "
+            "JOIN experiences e ON e.id = t.id",
+            (blob, blob, int(limit) + 1)).fetchall()
+        out = [{"task_id": r[0], "repo_id": r[1], "outcome": r[2],
+                "summary": r[3], "distance": float(r[4])}
+               for r in rows if r[4] is not None and r[0] != exclude_task]
+        out.sort(key=lambda e: e["distance"])
+        return out[:limit]
 
     # -- encoder ---------------------------------------------------------- #
     def save_encoder(self, revision: str, state: dict, matrix: np.ndarray) -> None:

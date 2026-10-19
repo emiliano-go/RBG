@@ -15,7 +15,10 @@
 
 from __future__ import annotations
 
+import ast
+import difflib
 import math
+import os
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -565,4 +568,110 @@ class ChangeImpactModel:
         self.model = GBDT(n_estimators=40, learning_rate=0.25, max_depth=3,
                           loss="logloss").fit(X, y)
         self.version = "impact-gbdt-v1"
+        return self
+
+
+# --------------------------------------------------------------------------- #
+# Patch correctness / overfitting (verified is not the same as correct)
+# --------------------------------------------------------------------------- #
+PATCH_FEATURE_NAMES = [
+    "added_lines", "removed_lines", "deleted_added_ratio", "changed_files",
+    "touches_tests", "new_files", "new_symbols", "changed_symbols",
+    "trivial_change_ratio", "context_overlap", "patch_token_len",
+]
+
+
+def _is_test_path(path: str) -> bool:
+    p = path.replace(os.sep, "/").lower()
+    base = p.rsplit("/", 1)[-1]
+    return ("/tests/" in "/" + p or p.startswith("tests/") or p.startswith("test/")
+            or base.startswith("test_") or base.endswith("_test.py"))
+
+
+def _new_defs(before: str, after: str) -> int:
+    def names(src: str) -> set[str]:
+        try:
+            tree = ast.parse(src)
+        except SyntaxError:
+            return set()
+        return {n.name for n in ast.walk(tree)
+                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
+    return len(names(after) - names(before))
+
+
+def patch_features(diffs: dict[str, tuple[str, str]], changed_symbols: list[str],
+                   context_text: str = "") -> np.ndarray:
+    """Static patch-shape features from the diff the loop already builds.
+
+    ODS/Leopard/Panther show static diff features plus gradient boosting reach
+    ~AUC 0.77-0.82 on patch correctness; these are the dependency-free subset.
+    Touching tests and a trivial (condition/constant-only) change are the two
+    classic overfitting tells and carry the untrained heuristic.
+    """
+    added = removed = touches_tests = new_files = new_symbols = trivial = 0
+    patch_tokens: set[str] = set()
+    for path, (before, after) in diffs.items():
+        if not before:
+            new_files += 1
+        if _is_test_path(path):
+            touches_tests += 1
+        for line in difflib.unified_diff(before.splitlines(), after.splitlines(),
+                                         lineterm=""):
+            if line.startswith(("+++", "---")):
+                continue
+            if line[:1] == "+":
+                added += 1
+                body = line[1:]
+                patch_tokens |= set(tokenize(body))
+                s = body.strip()
+                if s and not any(k in s for k in ("def ", "class ", "return", "import", "(")):
+                    trivial += 1
+            elif line[:1] == "-":
+                removed += 1
+        new_symbols += _new_defs(before, after)
+    ctx = set(tokenize(context_text)) if context_text else set()
+    overlap = len(patch_tokens & ctx) / len(patch_tokens) if patch_tokens else 0.0
+    ratio = removed / added if added else 0.0
+    trivial_ratio = trivial / added if added else 0.0
+    return np.array([
+        min(added, 200) / 200.0, min(removed, 200) / 200.0, min(ratio, 5.0) / 5.0,
+        float(len(diffs)), 1.0 if touches_tests else 0.0, 1.0 if new_files else 0.0,
+        min(new_symbols, 10) / 10.0, min(len(changed_symbols), 20) / 20.0,
+        trivial_ratio, overlap, min(len(patch_tokens), 500) / 500.0,
+    ], dtype=float)
+
+
+class PatchCorrectnessModel:
+    """Regression risk of a patch from its static shape (ODS/Leopard-style).
+
+    Deliberately not the risk head: risk predicts task failure from task
+    features, this predicts a *bad patch* from patch shape.  The label is the
+    ledger's regression evidence (a test that fails now but had not failed
+    earlier).  Untrained, it is a transparent heuristic; trained, a GBDT over
+    the same features, so wiring it converges rather than switching behaviour.
+    """
+
+    def __init__(self, model: GBDT | None = None) -> None:
+        self.model = model
+        self.version = "patch-heuristic-v1"
+
+    @staticmethod
+    def _idx(name: str) -> int:
+        return PATCH_FEATURE_NAMES.index(name)
+
+    def predict(self, feats) -> float:
+        f = np.asarray(feats, dtype=float).ravel()
+        if self.model and self.model.trained:
+            return float(self.model.predict(f)[0])
+        return float(min(1.0, 0.6 * f[self._idx("touches_tests")]
+                         + 0.4 * f[self._idx("trivial_change_ratio")]))
+
+    def train(self, X, y) -> "PatchCorrectnessModel":
+        X = np.asarray(X, dtype=float)
+        y = np.asarray(y, dtype=float)
+        if len(y) == 0 or len(set(y.tolist())) < 2:
+            return self
+        self.model = GBDT(n_estimators=50, learning_rate=0.2, max_depth=3,
+                          loss="logloss").fit(X, y)
+        self.version = "patch-gbdt-v1"
         return self

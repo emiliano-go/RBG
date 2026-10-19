@@ -96,7 +96,14 @@ inputs. None of them generate text — the LLM is the only generator.
 | **TestSelector** | Ranker | Ranks tests by relevance to changed symbols (token overlap + learned weights). | `rank(tests, changed_symbols)` → `[TestRank]` |
 | **FlakyModel** | Flakiness predictor | Estimates P(flaky) from a test's pass/fail history and duration. | `predict(history, duration)` |
 | **ChangeImpactModel** | Symbol × test impact | Predicts which tests a symbol change affects, from symbol and test tokens. | `predict(symbol, test_path, test_tokens, ...)` |
+| **PatchCorrectnessModel** | Static patch risk | P(regression) from patch shape (test edits, trivial changes, context overlap, size) — the "passing tests ≠ correct patch" signal (ODS/Leopard-style). | `predict(features)`, `train(X, y)` |
 | **Reranker** | Linear feature reranker | Reorders retrieval hits using query/chunk features; trained from ledger relevance. | `score(query, chunk)`, `rerank(...)`, `train(examples)` |
+| **CrossEncoderReranker** | Optional code cross-encoder | Heavier reranker behind the `semantic` extra; falls back to `Reranker`. | `rerank(query, hits, chunks)` |
+
+Experience memory: every verified run is written to the ledger as an
+(issue → fix) experience and the single most similar prior fix is recalled
+into context (SWE-Exp; N=1 retrieval). Encoder is `experience_encoder()` in
+`harness/retrieval.py`, storage `Store.save_experience`/`search_experiences`.
 
 Supporting types: `TaskFeatures` (the feature vector fed to GBDT/impact),
 `Decision` (a chosen action + rationale), `TestRank` (a ranked test),

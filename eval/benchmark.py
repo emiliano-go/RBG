@@ -45,6 +45,7 @@ class BenchConfig:
     max_iterations: int = 3
     blind: bool = False
     partial: bool = False
+    use_experience: bool = True
 
 
 CONFIGS = {
@@ -52,6 +53,8 @@ CONFIGS = {
     "+retrieval": BenchConfig("+retrieval", use_retrieval=True, use_plan_audit=False),
     "+plan_audit": BenchConfig("+plan_audit", use_retrieval=True, use_plan_audit=True),
     "full": BenchConfig("full", use_retrieval=True, use_reranker=True, use_plan_audit=True),
+    "full-noexp": BenchConfig("full-noexp", use_retrieval=True, use_reranker=True,
+                              use_plan_audit=True, use_experience=False),
     "blind-baseline": BenchConfig("blind-baseline", use_retrieval=False,
                                   use_plan_audit=False, blind=True),
     "blind-full": BenchConfig("blind-full", use_retrieval=True, use_reranker=True,
@@ -183,7 +186,7 @@ def run_task(task: dict, config: BenchConfig, workdir: str) -> dict:
         root, model,
         use_retrieval=config.use_retrieval, use_reranker=config.use_reranker,
         use_plan_audit=config.use_plan_audit, context_limit=config.context_limit,
-        max_iterations=config.max_iterations)
+        max_iterations=config.max_iterations, use_experience=config.use_experience)
     started = time.perf_counter()
     report = orch.run(task["task"], task_id=f"bench-{task['id']}")
     wall = time.perf_counter() - started

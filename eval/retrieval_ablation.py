@@ -42,12 +42,12 @@ class _NullEncoder:
         return []
 
 
-def _retriever(mode: str, idx: RepoIndex) -> HybridRetriever:
+def _retriever(mode: str, idx: RepoIndex, reranker=None) -> HybridRetriever:
     if mode == "lexical":
         return HybridRetriever(idx, semantic=True, encoder=_NullEncoder())
     if mode == "dense":
         return HybridRetriever(idx, semantic=True, lexical=_NullLexical())
-    return HybridRetriever(idx, semantic=True)
+    return HybridRetriever(idx, semantic=True, reranker=reranker)
 
 
 def _quality(hits: list, expected: list, k: int) -> tuple[float, float, float]:
@@ -74,10 +74,16 @@ def _write(root: str, files: dict) -> None:
             fh.write(content)
 
 
-def run(suite_dir: str, k: int = 5) -> dict:
+def run(suite_dir: str, k: int = 5, reranker: str = "") -> dict:
     suite = load_suite(suite_dir)
+    modes = list(MODES)
+    ce = None
+    if reranker == "heavy":
+        from harness.retrieval_heavy import CrossEncoderReranker
+        ce = CrossEncoderReranker()
+        modes.append("hybrid+ce")
     workdir = tempfile.mkdtemp(prefix="rbg-retr-")
-    rows = {mode: [] for mode in MODES}
+    rows = {mode: [] for mode in modes}
     try:
         for task in suite["tasks"]:
             root = os.path.join(workdir, task["id"])
@@ -85,8 +91,9 @@ def run(suite_dir: str, k: int = 5) -> dict:
             _write(root, task["files"])
             idx = RepoIndex.build(root)
             expected = task.get("expected_files", [])
-            for mode in MODES:
-                hits = _retriever(mode, idx).retrieve(task["task"], limit=k)
+            for mode in modes:
+                rr = ce if mode == "hybrid+ce" else None
+                hits = _retriever(mode, idx, rr).retrieve(task["task"], limit=k)
                 rows[mode].append(_quality(hits, expected, k))
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
@@ -109,14 +116,16 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="retrieval recall ablation")
     ap.add_argument("suite_dir", nargs="?", default="eval/suites/hard")
     ap.add_argument("--k", type=int, default=5)
+    ap.add_argument("--reranker", choices=["none", "heavy"], default="none",
+                    help="add a hybrid+cross-encoder mode (needs the semantic extra)")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
-    report = run(args.suite_dir, args.k)
+    report = run(args.suite_dir, args.k, args.reranker)
     if args.json:
         print(json.dumps(report, indent=2))
         return 0
     print(f"{report['suite']} ({report['n']} tasks, k={report['k']})")
-    for mode in MODES:
+    for mode in report["modes"]:
         m = report["modes"][mode]
         print(f"  {mode:<8} recall@1={m['recall_at_1']:.3f} "
               f"recall@{report['k']}={m['recall_at_k']:.3f} mrr={m['mrr']:.3f}")

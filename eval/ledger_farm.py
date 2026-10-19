@@ -41,10 +41,12 @@ def _reset(root: str) -> None:
 
 
 def farm(suite_dir: str, root: str, configs: tuple[str, ...],
-         limit: int | None, quiet: bool = False) -> dict:
+         limit: int | None, quiet: bool = False,
+         experience: bool = True) -> dict:
     suite = load_suite(suite_dir)
     tasks = suite["tasks"][:limit] if limit else suite["tasks"]
     os.makedirs(root, exist_ok=True)
+    runs = resolved = 0
 
     for task in tasks:
         for name in configs:
@@ -57,8 +59,10 @@ def farm(suite_dir: str, root: str, configs: tuple[str, ...],
                 root, model,
                 use_retrieval=cfg.use_retrieval, use_reranker=cfg.use_reranker,
                 use_plan_audit=cfg.use_plan_audit, context_limit=cfg.context_limit,
-                max_iterations=cfg.max_iterations)
+                max_iterations=cfg.max_iterations, use_experience=experience)
             report = orch.run(task["task"], task_id=f"farm-{task['id']}-{name}")
+            runs += 1
+            resolved += 1 if report.success else 0
             if not quiet:
                 print(f"{task['id']:40s} {name:14s} "
                       f"{report.status:10s} success={report.success}")
@@ -68,6 +72,10 @@ def farm(suite_dir: str, root: str, configs: tuple[str, ...],
         "root": root,
         "tasks": len(tasks),
         "configs": list(configs),
+        "experience": experience,
+        "runs": runs,
+        "resolved": resolved,
+        "resolution_rate": round(resolved / runs, 4) if runs else 0.0,
         "metrics": models.metrics,
         "validated": models.validated,
     }
@@ -84,13 +92,16 @@ def main(argv: list[str] | None = None) -> int:
                     help="keep a temporary root instead of deleting it")
     ap.add_argument("--force", action="store_true",
                     help="allow farming into a non-empty --root (it is wiped per run)")
+    ap.add_argument("--no-experience", dest="experience", action="store_false",
+                    help="disable experience-memory recall for the A/B")
     args = ap.parse_args(argv)
 
     root = os.path.abspath(args.root) if args.root else tempfile.mkdtemp(prefix="rbg-farm-")
     if args.root and os.path.isdir(root) and os.listdir(root) and not args.force:
         ap.error(f"refusing to wipe non-empty root {root!r}; pass --force if intended")
     try:
-        out = farm(args.suite, root, tuple(args.configs), args.tasks or None)
+        out = farm(args.suite, root, tuple(args.configs), args.tasks or None,
+                   experience=args.experience)
         verdict = validate_and_promote(root, min_test=args.min_test)
         out["validation"] = verdict
         print(json.dumps(out, indent=2))

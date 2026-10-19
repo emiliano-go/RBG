@@ -111,7 +111,8 @@ def _authorize_root(root: str) -> str:
         raise PermissionError(
             "no repository is authorized: set HARNESS_ALLOWED_ROOTS to an "
             "os.pathsep-separated allowlist of repository roots")
-    if not any(resolved == a or resolved.startswith(a + os.sep) for a in allowed):
+    if not any(a == os.sep or resolved == a or resolved.startswith(a + os.sep)
+               for a in allowed):
         raise PermissionError(f"repository not allowed: {root}")
     return resolved
 
