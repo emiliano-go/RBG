@@ -47,6 +47,18 @@ _READ_BUDGET_MS = int(os.environ.get("HARNESS_READ_BUDGET_MS", "1500"))
 
 def _read_budget(timeout_ms: int | None = None) -> float:
     return float(_READ_BUDGET_MS if timeout_ms is None else max(0, int(timeout_ms)))
+
+
+def _timings(t0: float, t_i: float, t_l: float, t_r: float, t_q: float,
+             t_x: float | None = None) -> dict:
+    def ms(a: float, b: float) -> float:
+        return round((b - a) * 1000, 1)
+    out = {"index_ms": ms(t0, t_i), "learned_ms": ms(t_i, t_l),
+           "retriever_ms": ms(t_l, t_r), "retrieve_ms": ms(t_r, t_q)}
+    if t_x is not None:
+        out["expand_ms"] = ms(t_q, t_x)
+    out["total_ms"] = ms(t0, t_x if t_x is not None else t_q)
+    return out
 _STORE_CACHE: dict[str, "db.Store | None"] = {}
 
 
@@ -172,13 +184,17 @@ def search_code(root: str, query: str, limit: int = 10, dense: bool = True,
     t0 = time.perf_counter()
     budget = _read_budget(timeout_ms)
     idx = _index(root)
+    t_i = time.perf_counter()
     learned = _learned(root)
+    t_l = time.perf_counter()
     retr = _retriever(root)
+    t_r = time.perf_counter()
     reranker = (learned.reranker if learned and learned.reranker
-                and (time.perf_counter() - t0) * 1000 <= budget else None)
+                and (t_r - t0) * 1000 <= budget else None)
     retr.reranker = reranker
     hits = retr.retrieve(query, limit=int(limit), include=include, exclude=exclude)
-    latency_ms = round((time.perf_counter() - t0) * 1000, 1)
+    t_q = time.perf_counter()
+    latency_ms = round((t_q - t0) * 1000, 1)
     return {
         "root": idx.root, "revision": idx.revision, "query": query,
         "index_fresh": _index_fresh(idx),
@@ -186,6 +202,7 @@ def search_code(root: str, query: str, limit: int = 10, dense: bool = True,
         "reranker": "trained" if reranker else ("off" if not (learned and learned.reranker) else "skipped_over_budget"),
         "latency_ms": latency_ms, "budget_ms": budget,
         "degraded": latency_ms > budget,
+        "timings": _timings(t0, t_i, t_l, t_r, t_q),
         "results": [h.to_dict() for h in hits],
     }
 
@@ -196,22 +213,28 @@ def retrieve_context(root: str, query: str, limit: int = 8, expand: bool = True,
     t0 = time.perf_counter()
     budget = _read_budget(timeout_ms)
     idx = _index(root)
+    t_i = time.perf_counter()
     learned = _learned(root)
+    t_l = time.perf_counter()
     retr = _retriever(root)
+    t_r = time.perf_counter()
     reranker = (learned.reranker if learned and learned.reranker
-                and (time.perf_counter() - t0) * 1000 <= budget else None)
+                and (t_r - t0) * 1000 <= budget else None)
     retr.reranker = reranker
     hits = retr.retrieve(query, limit=int(limit), include=include, exclude=exclude)
+    t_q = time.perf_counter()
     if expand:
         hits = retr.expand(hits)[: int(limit)]
+    t_x = time.perf_counter()
     tokens = sum(len(h.content) for h in hits) // 4
-    latency_ms = round((time.perf_counter() - t0) * 1000, 1)
+    latency_ms = round((t_x - t0) * 1000, 1)
     return {
         "root": idx.root, "revision": idx.revision, "query": query,
         "index_fresh": _index_fresh(idx),
         "context_token_estimate": tokens,
         "latency_ms": latency_ms, "budget_ms": budget,
         "degraded": latency_ms > budget,
+        "timings": _timings(t0, t_i, t_l, t_r, t_q, t_x),
         "chunks": [h.to_dict() for h in hits],
     }
 

@@ -1154,3 +1154,11 @@ def test_search_code_per_call_timeout_override(tmp_path):
     sc = _call("search_code", {"root": root, "query": "compute",
                                "timeout_ms": 0})["result"]["structuredContent"]
     assert sc["budget_ms"] == 0 and sc["degraded"] is True
+
+
+def test_perf_bench_reports_p95_and_budget(tmp_path):
+    import importlib
+    perf = importlib.import_module("eval.perf")
+    rep = perf._bench(lambda: sum(range(100)), 5)
+    assert {"p50_ms", "p95_ms", "median_ms", "repeat"} <= set(rep)
+    assert rep["p95_ms"] >= rep["p50_ms"]

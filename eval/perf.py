@@ -38,6 +38,8 @@ def _bench(fn, repeat: int) -> dict:
         fn()
         ts.append((time.perf_counter() - t0) * 1000.0)
     return {"median_ms": round(statistics.median(ts), 4),
+            "p50_ms": round(float(np.percentile(ts, 50)), 4),
+            "p95_ms": round(float(np.percentile(ts, 95)), 4),
             "min_ms": round(min(ts), 4), "repeat": repeat}
 
 
@@ -119,8 +121,12 @@ def _call(name: str, arguments: dict):
 
 def bench_tools(root: str, index: RepoIndex, repeat: int) -> dict:
     syms = [s.name for s in index.symbols[:3]] or ["x"]
+    long_query = ("please compute the metric total value for the helper that the "
+                  "helper the total the value should compute and recompute the "
+                  "metric helper value total")
     calls = {
         "search_code": lambda: _call("search_code", {"root": root, "query": "compute metric", "limit": 10}),
+        "search_code(long query)": lambda: _call("search_code", {"root": root, "query": long_query, "limit": 10}),
         "retrieve_context": lambda: _call("retrieve_context", {"root": root, "query": "compute metric", "limit": 8}),
         "find_symbol": lambda: _call("find_symbol", {"root": root, "name": syms[0]}),
         "get_change_impact": lambda: _call("get_change_impact", {"root": root, "symbols": syms}),
@@ -147,6 +153,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("repo")
     ap.add_argument("--repeat", type=int, default=7)
+    ap.add_argument("--budget-ms", type=float, default=0.0,
+                    help="fail (exit 2) if any tool's p95 latency exceeds this")
     ap.add_argument("--out", default="")
     args = ap.parse_args()
     root = os.path.abspath(args.repo)
@@ -160,11 +168,18 @@ def main() -> int:
         "models": bench_models(idx, args.repeat),
         "tools": bench_tools(root, idx, args.repeat),
     }
+    over = {name: m["p95_ms"] for name, m in report["tools"].items()
+            if args.budget_ms and m["p95_ms"] > args.budget_ms}
+    report["latency_budget"] = {
+        "budget_ms": args.budget_ms,
+        "worst_p95_ms": max((m["p95_ms"] for m in report["tools"].values()), default=0.0),
+        "over_budget": sorted(over), "ok": not over,
+    }
     print(json.dumps(report, indent=2))
     if args.out:
         with open(args.out, "w") as fh:
             json.dump(report, fh, indent=2)
-    return 0
+    return 2 if over else 0
 
 
 if __name__ == "__main__":
