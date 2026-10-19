@@ -106,6 +106,9 @@ class Store:
             id INTEGER PRIMARY KEY, task_id TEXT, component TEXT, revision TEXT,
             timestamp TEXT, model_name TEXT, confidence REAL, reason_codes TEXT,
             result TEXT, inputs_hash TEXT)""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS plans(
+            task_id TEXT PRIMARY KEY, root TEXT, doc TEXT, version INTEGER,
+            updated_at REAL)""")
         cur.execute("""CREATE TABLE IF NOT EXISTS models(
             name TEXT PRIMARY KEY, revision TEXT, version TEXT,
             payload BLOB, metrics TEXT, updated_at REAL)""")
@@ -310,6 +313,26 @@ class Store:
             return None
         return rows[0][0], pickle.loads(rows[0][1])
 
+    # -- plan documents --------------------------------------------------- #
+    def save_plan(self, root: str, task_id: str, doc: dict) -> None:
+        self.conn.execute(
+            "INSERT INTO plans(task_id, root, doc, version, updated_at) "
+            "VALUES(?,?,?,?,?) ON CONFLICT(task_id) DO UPDATE SET "
+            "root=excluded.root, doc=excluded.doc, version=excluded.version, "
+            "updated_at=excluded.updated_at",
+            (task_id, root, json.dumps(doc), int(doc.get("version") or 1), time.time()))
+        self.commit()
+
+    def load_plan(self, root: str, task_id: str) -> dict | None:
+        rows = self.conn.execute(
+            "SELECT doc, root FROM plans WHERE task_id = ?", (task_id,)).fetchall()
+        if not rows:
+            return None
+        doc = json.loads(rows[0][0])
+        if root and rows[0][1] != root:
+            return None
+        return doc
+
     # -- ledger ----------------------------------------------------------- #
     def append_ledger(self, entry: dict) -> None:
         self.conn.execute(
@@ -320,6 +343,10 @@ class Store:
              json.dumps(entry.get("reason_codes", [])), json.dumps(entry.get("result", {})),
              entry.get("inputs_hash", "")))
         self.commit()
+
+    def repo_revision(self) -> str:
+        rows = self.conn.execute("SELECT revision FROM repo WHERE id = 1").fetchall()
+        return rows[0][0] if rows else ""
 
     def ledger_count(self) -> int:
         """Cheap ledger-size probe: lets the read path notice new rows without

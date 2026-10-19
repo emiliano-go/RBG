@@ -1236,3 +1236,81 @@ def test_warm_start_after_revision_change(tmp_path):
     (tmp_path / "m.py").write_text("def alpha():\n    return 1\n\n\ndef gamma():\n    return 3\n")
     sc = _call("search_code", {"root": root, "query": "gamma"})["result"]["structuredContent"]
     assert sc["results"]
+
+
+# -- JSON plan document (Workstream H) ------------------------------------- #
+def test_plan_editor_create_append_attach_and_depth_cap():
+    from harness.plan import PlanEditor
+    ed = PlanEditor.create("r", "t", "T", [{"title": "a"}])
+    assert len(ed.doc.sections) == 1
+    cur = ed.append({"title": "b"})
+    for _ in range(4):                      # root 1 -> deepest 5
+        cur = ed.attach(cur.id, {"title": "x"})
+    assert ed.doc.find(cur.id)[1] == 5
+    with pytest.raises(ValueError):
+        ed.attach(cur.id, {"title": "too deep"})
+
+
+def test_plan_complete_requires_passing_validation():
+    from harness.plan import PlanEditor
+    ed = PlanEditor.create("r", "t", "T", [{"title": "a"}])
+    sid = ed.doc.sections[0].id
+    out = ed.complete(sid)
+    assert out["done"] is False and ed.get(sid)["status"] == "open"
+    out = ed.complete(sid, {"verdict": "pass", "evidence": "tests green", "model": "m"})
+    assert out["done"] is True and ed.get(sid)["status"] == "done"
+    assert ed.get(sid)["validation"]["model"] == "m"
+
+
+def test_plan_complete_uses_validator_callable():
+    from harness.plan import PlanEditor
+    ed = PlanEditor.create("r", "t", "T", [{"title": "a"}],
+                           validator=lambda sec: {"verdict": "pass", "evidence": "auto"})
+    ed.complete(ed.doc.sections[0].id)
+    assert ed.get(ed.doc.sections[0].id)["status"] == "done"
+
+
+def test_plan_parent_rollup_and_mutation_roundtrip():
+    from harness.plan import PlanEditor
+    ed = PlanEditor.create("r", "t", "T", [{"title": "parent"}])
+    parent = ed.doc.sections[0]
+    child = ed.attach(parent.id, {"title": "child"})
+    ed.complete(parent.id, {"verdict": "pass"})
+    ed.complete(child.id, {"verdict": "pass"})
+    assert ed.tree()["sections"][0]["effective"] == "done"
+    ed.modify(child.id, {"status": "dropped"})
+    assert ed.tree()["sections"][0]["effective"] == "open"
+    ed.modify(parent.id, {"title": "renamed", "body": "do x", "status": "blocked"})
+    ed.note(parent.id, "note!")
+    ed.check(parent.id, "pytest", "pass", "3 passed")
+    d = ed.get(parent.id)
+    assert d["title"] == "renamed" and d["status"] == "blocked"
+    assert any(n["text"] == "note!" for n in d["notes"])
+    assert d["checks"][0] == {"name": "pytest", "status": "pass", "evidence": "3 passed"}
+
+
+def test_mcp_plan_tools_roundtrip_and_persist(tmp_path):
+    root, _ = _synthetic_ledger(tmp_path / "plans")
+    mcp_server._STORE_CACHE.clear()
+    out = _call("plan_create", {"root": root, "task_id": "t1", "title": "Fix"})
+    assert out["result"]["structuredContent"]["version"] == 1
+    sec = _call("plan_append", {"root": root, "task_id": "t1",
+                                "section": {"title": "step1"}})["result"]["structuredContent"]
+    sid = sec["section"]["id"]
+    _call("plan_note", {"root": root, "task_id": "t1", "section_id": sid, "text": "hi"})
+    _call("plan_check", {"root": root, "task_id": "t1", "section_id": sid,
+                         "name": "tests", "status": "pass", "evidence": "ok"})
+    comp = _call("plan_complete", {"root": root, "task_id": "t1", "section_id": sid,
+                                   "validation": {"verdict": "pass", "evidence": "ok"}})
+    assert comp["result"]["structuredContent"]["done"] is True
+    got = _call("plan_get", {"root": root, "task_id": "t1"})["result"]["structuredContent"]
+    assert got["plan"]["sections"][0]["status"] == "done"
+    aud = _call("plan_audit", {"root": root, "task_id": "t1"})["result"]["structuredContent"]
+    assert aud["audit"]["sections"][0]["effective"] == "done"
+    mcp_server._STORE_CACHE.clear()          # force a fresh read from disk
+    got2 = _call("plan_get", {"root": root, "task_id": "t1"})["result"]["structuredContent"]
+    assert got2["plan"]["version"] == got["plan"]["version"]
+    from harness import db as hdb
+    actions = {e["result"]["action"] for e in hdb.Store(root).read_ledger()
+               if e["component"] == "plan"}
+    assert {"create", "append", "complete"} <= actions

@@ -26,7 +26,7 @@ from . import db
 from .index import RepoIndex, _tree_hash, _tree_signature, chunk_key
 from .models import TestSelector
 from .paths import resolve_within
-from .plan import audit_completion, parse_plan, scope_drift
+from .plan import PlanDocument, PlanEditor, audit_completion, parse_plan, scope_drift
 from .retrieval import FTSBackend, HybridRetriever, LSIEncoder, tokenize
 from .training import LearnedModels, read_ledger, train_from_ledger
 from .verify import Sandbox
@@ -350,16 +350,99 @@ def get_change_impact(root: str, symbols: list[str]) -> dict:
     return {"root": idx.root, "revision": idx.revision, "advisory": True, "impact": impact}
 
 
-def plan_audit(root: str, plan_text: str, task: str = "",
-               changed_files: list[str] | None = None) -> dict:
-    """Deterministic plan + step-level drift audit (advisory).
+# --------------------------------------------------------------------------- #
+# Plan document tools (Workstream H).  The store is the source of truth; every
+# mutation is root-authorized, containment-checked, depth-capped and versioned.
+# --------------------------------------------------------------------------- #
+def _plan_doc(root: str, task_id: str):
+    root = _authorize_root(root)
+    store = _store(root)
+    raw = store.load_plan(root, task_id)
+    if raw is None:
+        raise KeyError(f"no plan for task {task_id!r}")
+    return root, store, PlanDocument.from_dict(raw)
 
-    Parses a free-text plan against the repo's real files, then reports the
-    scope drift against ``changed_files`` and the completeness gap (callers of
-    the changed symbols that were neither edited nor named in the plan).  No
-    LLM, and deliberately no retriever: fitting the LSA projector here bought
-    nothing the plan's own file list does not already supply.
-    """
+
+def _plan_ledger(store, task_id: str, revision: str, result: dict) -> None:
+    store.append_ledger({"task_id": task_id, "component": "plan",
+                         "revision": revision, "model_name": "",
+                         "reason_codes": [], "result": result})
+
+
+def _mutate_plan(root: str, task_id: str, fn, action: str = "mutate"):
+    root, store, doc = _plan_doc(root, task_id)
+    out = fn(PlanEditor(doc))
+    store.save_plan(root, task_id, doc.to_dict())
+    _plan_ledger(store, task_id, store.repo_revision(), {"action": action, "version": doc.version})
+    return out
+
+
+def plan_create(root: str, task_id: str, title: str, sections: list | None = None) -> dict:
+    root = _authorize_root(root)
+    editor = PlanEditor.create(root, task_id, title, sections or [])
+    store = _store(root)
+    store.save_plan(root, task_id, editor.doc.to_dict())
+    _plan_ledger(store, task_id, store.repo_revision(), {"action": "create"})
+    return {"root": root, "task_id": task_id, "id": editor.doc.id,
+            "version": editor.doc.version, "tree": editor.tree()}
+
+
+def plan_append(root: str, task_id: str, section: dict) -> dict:
+    out = _mutate_plan(root, task_id, lambda ed: ed.append(section), "append")
+    return {"version": _plan_doc(root, task_id)[2].version, "section": out.to_dict()}
+
+
+def plan_attach(root: str, task_id: str, parent_id: str, section: dict) -> dict:
+    out = _mutate_plan(root, task_id, lambda ed: ed.attach(parent_id, section), "attach")
+    return {"version": _plan_doc(root, task_id)[2].version, "section": out.to_dict()}
+
+
+def plan_complete(root: str, task_id: str, section_id: str,
+                  validation: dict | None = None) -> dict:
+    out = _mutate_plan(root, task_id, lambda ed: ed.complete(section_id, validation), "complete")
+    out["version"] = _plan_doc(root, task_id)[2].version
+    return out
+
+
+def plan_modify(root: str, task_id: str, section_id: str, fields: dict) -> dict:
+    out = _mutate_plan(root, task_id, lambda ed: ed.modify(section_id, fields), "modify")
+    return {"version": _plan_doc(root, task_id)[2].version, "section": out.to_dict()}
+
+
+def plan_note(root: str, task_id: str, section_id: str, text: str) -> dict:
+    out = _mutate_plan(root, task_id, lambda ed: ed.note(section_id, text), "note")
+    return {"version": _plan_doc(root, task_id)[2].version, "section": out.to_dict()}
+
+
+def plan_check(root: str, task_id: str, section_id: str, name: str,
+               status: str, evidence: str = "") -> dict:
+    out = _mutate_plan(root, task_id,
+                       lambda ed: ed.check(section_id, name, status, evidence), "check")
+    return {"version": _plan_doc(root, task_id)[2].version, "check": out}
+
+
+def plan_get(root: str, task_id: str, section_id: str | None = None) -> dict:
+    _, _, doc = _plan_doc(root, task_id)
+    return {"root": _authorize_root(root), "task_id": task_id,
+            "version": doc.version, "plan": PlanEditor(doc).get(section_id)}
+
+
+def plan_tree(root: str, task_id: str) -> dict:
+    _, _, doc = _plan_doc(root, task_id)
+    return {"root": _authorize_root(root), "task_id": task_id, "tree": PlanEditor(doc).tree()}
+
+
+def plan_audit(root: str, plan_text: str = "", task: str = "",
+               changed_files: list[str] | None = None,
+               task_id: str | None = None) -> dict:
+    """Plan audit.  With ``task_id`` it consumes the stored JSON document and
+    reports its status rollup (no index, no retriever).  Without it, it falls
+    back to parsing free-text plan text against the repo's real files."""
+    if task_id:
+        root, _, doc = _plan_doc(root, task_id)
+        editor = PlanEditor(doc)
+        return {"root": root, "task_id": task_id, "advisory": True,
+                "plan": editor.get(), "audit": editor.audit()}
     idx = _index(root)
     changed = list(changed_files or [])
     plan = parse_plan(plan_text, set(idx.files))
@@ -609,12 +692,85 @@ TOOLS = {
     },
     "plan_audit": {
         "fn": plan_audit,
-        "description": "Audit a free-text plan against the repo: scope drift + completeness (advisory).",
+        "description": "Audit a plan: stored JSON document rollup when task_id is given, else a free-text plan's scope drift + completeness (advisory).",
         "inputSchema": {"type": "object", "properties": {
-            "root": {"type": "string"}, "plan_text": {"type": "string"},
+            "root": {"type": "string"}, "task_id": {"type": "string"},
+            "plan_text": {"type": "string"},
             "task": {"type": "string"},
             "changed_files": {"type": "array", "items": {"type": "string"}}},
-            "required": ["root", "plan_text"]},
+            "required": ["root"]},
+    },
+    "plan_create": {
+        "fn": plan_create,
+        "description": "Create a JSON plan document (the server owns the plan; no file rewrite).",
+        "inputSchema": {"type": "object", "properties": {
+            "root": {"type": "string"}, "task_id": {"type": "string"},
+            "title": {"type": "string"},
+            "sections": {"type": "array", "items": {"type": "object"}}},
+            "required": ["root", "task_id", "title"]},
+    },
+    "plan_append": {
+        "fn": plan_append,
+        "description": "Append a top-level section to a stored plan.",
+        "inputSchema": {"type": "object", "properties": {
+            "root": {"type": "string"}, "task_id": {"type": "string"},
+            "section": {"type": "object"}}, "required": ["root", "task_id", "section"]},
+    },
+    "plan_attach": {
+        "fn": plan_attach,
+        "description": "Attach a subsection under a parent (depth cap 5).",
+        "inputSchema": {"type": "object", "properties": {
+            "root": {"type": "string"}, "task_id": {"type": "string"},
+            "parent_id": {"type": "string"}, "section": {"type": "object"}},
+            "required": ["root", "task_id", "parent_id", "section"]},
+    },
+    "plan_complete": {
+        "fn": plan_complete,
+        "description": "Mark a section done only with a passing model validation.",
+        "inputSchema": {"type": "object", "properties": {
+            "root": {"type": "string"}, "task_id": {"type": "string"},
+            "section_id": {"type": "string"},
+            "validation": {"type": "object", "description": "{verdict: pass|fail, evidence: str, model: str}"}},
+            "required": ["root", "task_id", "section_id"]},
+    },
+    "plan_modify": {
+        "fn": plan_modify,
+        "description": "Edit a section's title/body/status (open|blocked|dropped).",
+        "inputSchema": {"type": "object", "properties": {
+            "root": {"type": "string"}, "task_id": {"type": "string"},
+            "section_id": {"type": "string"}, "fields": {"type": "object"}},
+            "required": ["root", "task_id", "section_id", "fields"]},
+    },
+    "plan_note": {
+        "fn": plan_note,
+        "description": "Append a timestamped note to a section.",
+        "inputSchema": {"type": "object", "properties": {
+            "root": {"type": "string"}, "task_id": {"type": "string"},
+            "section_id": {"type": "string"}, "text": {"type": "string"}},
+            "required": ["root", "task_id", "section_id", "text"]},
+    },
+    "plan_check": {
+        "fn": plan_check,
+        "description": "Record a check result on a section.",
+        "inputSchema": {"type": "object", "properties": {
+            "root": {"type": "string"}, "task_id": {"type": "string"},
+            "section_id": {"type": "string"}, "name": {"type": "string"},
+            "status": {"type": "string"}, "evidence": {"type": "string"}},
+            "required": ["root", "task_id", "section_id", "name", "status"]},
+    },
+    "plan_get": {
+        "fn": plan_get,
+        "description": "Read a stored plan document (or one section).",
+        "inputSchema": {"type": "object", "properties": {
+            "root": {"type": "string"}, "task_id": {"type": "string"},
+            "section_id": {"type": "string"}}, "required": ["root", "task_id"]},
+    },
+    "plan_tree": {
+        "fn": plan_tree,
+        "description": "Return the plan as a depth/status tree with effective rollup.",
+        "inputSchema": {"type": "object", "properties": {
+            "root": {"type": "string"}, "task_id": {"type": "string"}},
+            "required": ["root", "task_id"]},
     },
     "get_calibration": {
         "fn": get_calibration,
