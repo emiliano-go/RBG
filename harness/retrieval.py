@@ -22,7 +22,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .index import Chunk, RepoIndex
+from .index import Chunk, RepoIndex, chunk_key
+
+SNIPPET_CHARS = 400
 
 _WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*|\d+")
 
@@ -110,13 +112,22 @@ class Hit:
     content: str = ""
     commit_hash: str = ""
 
-    def to_dict(self) -> dict:
+    @property
+    def chunk_id(self) -> str:
+        return chunk_key(self.path, self.start_line, self.end_line)
+
+    def to_dict(self, snippet_chars: int = SNIPPET_CHARS) -> dict:
+        """Discovery output is a capped snippet, not the whole chunk; fetch the
+        full text with read_chunk(chunk_id)."""
         return {
             "path": self.path, "symbol": self.symbol,
             "start_line": self.start_line, "end_line": self.end_line,
             "score": round(self.score, 6), "score_type": self.score_type,
             "reason": self.reason, "content_hash": self.content_hash,
-            "commit_hash": self.commit_hash,
+            "commit_hash": self.commit_hash, "chunk_id": self.chunk_id,
+            "snippet": self.content[:snippet_chars],
+            "content_chars": len(self.content),
+            "truncated": len(self.content) > snippet_chars,
         }
 
 

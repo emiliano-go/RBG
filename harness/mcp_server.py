@@ -21,7 +21,7 @@ import sys
 import traceback
 
 from . import db
-from .index import RepoIndex, _tree_hash
+from .index import RepoIndex, _tree_hash, chunk_key
 from .models import TestSelector
 from .paths import resolve_within
 from .plan import audit_completion, parse_plan, scope_drift
@@ -163,8 +163,21 @@ def retrieve_context(root: str, query: str, limit: int = 8, expand: bool = True,
         "root": idx.root, "revision": idx.revision, "query": query,
         "index_fresh": _index_fresh(idx),
         "context_token_estimate": tokens,
-        "chunks": [{**h.to_dict(), "content": h.content} for h in hits],
+        "chunks": [h.to_dict() for h in hits],
     }
+
+
+def read_chunk(root: str, chunk_id: str) -> dict:
+    """Full text of one chunk by id (``path:start-end``), so discovery results
+    can stay as capped snippets while the detail is one call away."""
+    idx = _index(root)
+    for c in idx.chunks:
+        if chunk_key(c.path, c.start_line, c.end_line) == chunk_id:
+            return {"root": idx.root, "revision": idx.revision, "chunk_id": chunk_id,
+                    "path": c.path, "symbol": c.symbol, "kind": c.kind,
+                    "start_line": c.start_line, "end_line": c.end_line,
+                    "content": c.content, "content_hash": c.content_hash}
+    raise ValueError(f"no such chunk: {chunk_id!r}")
 
 
 def find_symbol(root: str, name: str, exact: bool = False,
@@ -174,6 +187,7 @@ def find_symbol(root: str, name: str, exact: bool = False,
     defs = [
         {"path": s.path, "kind": s.kind, "start_line": s.start_line,
          "end_line": s.end_line,
+         "chunk_id": chunk_key(s.path, s.start_line, s.end_line),
          "content_hash": next((c.content_hash for c in idx.chunks
                                if c.path == s.path and c.start_line == s.start_line), "")}
         for s in idx.symbols
@@ -403,6 +417,14 @@ TOOLS = {
             "path": {"type": "string", "description": "glob filter for definition paths"},
             "kind": {"type": "string", "description": "symbol kind (function/class/constant)"}},
             "required": ["root", "name"]},
+    },
+    "read_chunk": {
+        "fn": read_chunk,
+        "description": "Return the full text of one chunk by id (path:start-end).",
+        "inputSchema": {"type": "object", "properties": {
+            "root": {"type": "string"},
+            "chunk_id": {"type": "string", "description": "chunk id, path:start-end"}},
+            "required": ["root", "chunk_id"]},
     },
     "get_change_impact": {
         "fn": get_change_impact,

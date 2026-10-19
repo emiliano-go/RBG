@@ -269,7 +269,7 @@ def test_mcp_initialize_and_tools_list():
     listed = mcp_server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
     names = {t["name"] for t in listed["result"]["tools"]}
     assert {"search_code", "retrieve_context", "find_symbol", "rank_tests",
-            "run_checks", "get_diagnostics", "propose_patch",
+            "run_checks", "get_diagnostics", "propose_patch", "read_chunk",
             "train_models", "get_calibration"} <= names
 
 
@@ -279,10 +279,23 @@ def test_mcp_tools_return_structured_content(tmp_path):
     out = _call("retrieve_context", {"root": root, "query": "discount", "limit": 3})
     assert out["result"]["isError"] is False
     sc = out["result"]["structuredContent"]
-    assert sc["chunks"] and all(c["content"].strip() for c in sc["chunks"])
+    assert sc["chunks"] and all(c["snippet"].strip() for c in sc["chunks"])
     assert sc["context_token_estimate"] > 0
     sym = _call("find_symbol", {"root": root, "name": "apply_discount"})
     assert any(d["path"] == "shop.py" for d in sym["result"]["structuredContent"]["definitions"])
+
+
+def test_mcp_discovery_is_snippet_and_read_chunk_returns_full(tmp_path):
+    root = str(tmp_path / "repo")
+    _make_demo_repo(root)
+    out = _call("retrieve_context", {"root": root, "query": "discount", "limit": 3})
+    chunk = out["result"]["structuredContent"]["chunks"][0]
+    assert "chunk_id" in chunk and "content" not in chunk
+    full = _call("read_chunk", {
+        "root": root, "chunk_id": chunk["chunk_id"]})["result"]["structuredContent"]
+    assert full["chunk_id"] == chunk["chunk_id"]
+    assert full["content_hash"] == chunk["content_hash"]
+    assert full["content"].strip() and len(full["content"]) >= len(chunk["snippet"])
 
 
 def test_mcp_errors_are_contained():

@@ -69,6 +69,11 @@ class Chunk:
             self.content_hash = _sha(self.content)
 
 
+def chunk_key(path: str, start_line: int, end_line: int) -> str:
+    """Stable identity for a chunk, usable across requests (see read_chunk)."""
+    return f"{path}:{start_line}-{end_line}"
+
+
 @dataclass
 class Symbol:
     name: str
