@@ -997,3 +997,23 @@ def test_audit_completion_skips_generic_and_high_fanin_symbols(tmp_path):
     assert "__init__" in comp["skipped_generic_symbols"]            # dunder
     assert "to_dict" in comp["skipped_generic_symbols"]             # generic name
     assert comp["affected_not_edited"] == ["caller.py"], comp
+
+
+# -- real LLM provider (OpenAI-compatible) ---------------------------------- #
+def test_parse_edits_accepts_fences_lists_and_bare_objects():
+    from harness.providers import parse_edits
+    fenced = 'here you go\n```json\n{"edits": [{"path": "a.py", "content": "x = 1\\n"}]}\n```\ndone'
+    assert [(o.path, o.content) for o in parse_edits(fenced)] == [("a.py", "x = 1\n")]
+    assert parse_edits('{"edits": []}') == []
+    assert [o.path for o in parse_edits('[{"path": "b.py", "content": ""}]')] == ["b.py"]
+    with pytest.raises(ValueError):
+        parse_edits("the model rambled with no json at all")
+
+
+def test_openai_compatible_llm_maps_reply_to_edit_ops(monkeypatch):
+    from harness.providers import OpenAICompatLLM
+    llm = OpenAICompatLLM(model="m", base_url="http://localhost:1/v1", api_key="sk-test")
+    monkeypatch.setattr(llm, "_chat",
+                        lambda system, user: '{"edits": [{"path": "shop.py", "content": "y"}]}')
+    ops = llm.edit("fix", "plan", [])
+    assert [(o.path, o.content) for o in ops] == [("shop.py", "y")]

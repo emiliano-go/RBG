@@ -12,6 +12,7 @@ from .models import (
 )
 from .orchestrator import EditOp, MainLLM, Orchestrator, Report
 from .plan import Drift, Plan, PlanStep, audit_completion, parse_plan, scope_drift
+from .providers import OpenAICompatLLM, parse_edits
 from .retrieval import BM25, DenseEncoder, Hit, HybridRetriever, Reranker
 from .verify import CommandResult, Ledger, Sandbox, TestOutcome, Verifier
 
@@ -21,6 +22,7 @@ __all__ = [
     "TestSelector", "TestRank", "FlakyModel", "extract_features",
     "Orchestrator", "Report", "EditOp", "MainLLM",
     "Plan", "PlanStep", "Drift", "parse_plan", "scope_drift", "audit_completion",
+    "OpenAICompatLLM", "parse_edits",
     "BM25", "DenseEncoder", "HybridRetriever", "Reranker", "Hit",
     "Sandbox", "Verifier", "Ledger", "CommandResult", "TestOutcome",
 ]
