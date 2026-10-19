@@ -46,10 +46,35 @@ def _store(root: str) -> "db.Store":
     return _STORE_CACHE[root]
 
 
-def _index(root: str) -> RepoIndex:
-    root = os.path.abspath(os.path.expanduser(root))
-    if not os.path.isdir(root):
+def _allowed_roots() -> list[str]:
+    """The authorization allowlist from ``HARNESS_ALLOWED_ROOTS`` (os.pathsep
+    separated).  Empty means nothing is authorized."""
+    raw = os.environ.get("HARNESS_ALLOWED_ROOTS", "")
+    return [os.path.realpath(os.path.expanduser(p))
+            for p in raw.split(os.pathsep) if p.strip()]
+
+
+def _authorize_root(root: str) -> str:
+    """Resolve a caller-supplied root and require it under the allowlist.
+
+    Deny by default: with no allowlist configured, no repository is authorized,
+    so a tool call can only ever touch a path an operator explicitly named.
+    """
+    resolved = os.path.realpath(os.path.expanduser(root))
+    if not os.path.isdir(resolved):
         raise ValueError(f"not a directory: {root}")
+    allowed = _allowed_roots()
+    if not allowed:
+        raise PermissionError(
+            "no repository is authorized: set HARNESS_ALLOWED_ROOTS to an "
+            "os.pathsep-separated allowlist of repository roots")
+    if not any(resolved == a or resolved.startswith(a + os.sep) for a in allowed):
+        raise PermissionError(f"repository not allowed: {root}")
+    return resolved
+
+
+def _index(root: str) -> RepoIndex:
+    root = _authorize_root(root)
     if root not in _INDEX_CACHE:
         store = _store(root)
         try:

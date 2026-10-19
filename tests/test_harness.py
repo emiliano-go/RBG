@@ -303,6 +303,41 @@ def test_mcp_notifications_and_propose_patch_never_write(tmp_path):
     assert open(os.path.join(root, "shop.py")).read() == before
 
 
+# -- root authorization (deny by default) ----------------------------------- #
+def test_mcp_root_denied_without_allowlist(tmp_path, monkeypatch):
+    root = str(tmp_path / "repo")
+    _make_demo_repo(root)
+    monkeypatch.delenv("HARNESS_ALLOWED_ROOTS", raising=False)
+    out = _call("retrieve_context", {"root": root, "query": "discount", "limit": 1})
+    assert out["result"]["isError"] is True
+    assert "authoriz" in out["result"]["content"][0]["text"].lower()
+
+
+def test_mcp_root_outside_allowlist_is_denied(tmp_path, monkeypatch):
+    root = str(tmp_path / "repo")
+    _make_demo_repo(root)
+    monkeypatch.setenv("HARNESS_ALLOWED_ROOTS", str(tmp_path / "elsewhere"))
+    out = _call("retrieve_context", {"root": root, "query": "discount", "limit": 1})
+    assert out["result"]["isError"] is True
+    assert "not allowed" in out["result"]["content"][0]["text"].lower()
+
+
+def test_mcp_root_within_allowlist_is_allowed(tmp_path, monkeypatch):
+    root = str(tmp_path / "repo")
+    _make_demo_repo(root)
+    monkeypatch.setenv("HARNESS_ALLOWED_ROOTS", str(tmp_path))
+    out = _call("retrieve_context", {"root": root, "query": "discount", "limit": 1})
+    assert out["result"]["isError"] is False
+
+
+def test_authorize_root_rejects_sibling_prefix(tmp_path, monkeypatch):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "ab").mkdir()
+    monkeypatch.setenv("HARNESS_ALLOWED_ROOTS", str(tmp_path / "a"))
+    with pytest.raises(PermissionError):
+        mcp_server._authorize_root(str(tmp_path / "ab"))
+
+
 # -- index hardening (gitignore, constants, interpreter) -------------------- #
 def test_index_honors_gitignore(tmp_path):
     import subprocess
