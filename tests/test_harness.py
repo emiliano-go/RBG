@@ -1088,3 +1088,18 @@ def test_selector_labels_mark_only_new_regressions():
     ]
     pairs = [(e[2], e[-1]) for e in selector_examples(entries)]
     assert pairs == [("x", 0), ("y", 1), ("x", 1), ("y", 0)]  # y already red at t1
+
+
+# -- deterministic benchmark harness ---------------------------------------- #
+def test_benchmark_smoke_suite_and_compare():
+    import os
+    from eval.benchmark import compare, run_suite
+    suite = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         "eval", "suites", "smoke")
+    base = run_suite(suite, "baseline")
+    full = run_suite(suite, "full")
+    assert base["n"] == 3 and base["metrics"]["resolution_rate"] == 1.0
+    assert base["metrics"]["regression_rate"] == 0.0
+    assert base["metrics"]["recall_at_k"] == 0.0        # retrieval off
+    assert full["metrics"]["recall_at_k"] > 0.0         # retrieval on
+    assert compare(base, full)["metrics"]["recall_at_k"]["delta"] > 0

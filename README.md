@@ -252,6 +252,11 @@ rbg retrieve /path/to/repo "where are edits applied"
 # measure the retriever
 python3 -m eval.effectiveness /path/to/repo --sample 200
 
+# run the deterministic benchmark and compare two configs
+rbg eval --suite eval/suites/smoke --config baseline --out baseline.json
+rbg eval --suite eval/suites/smoke --config full --out full.json
+rbg compare baseline.json full.json
+
 # run the suite
 python3 -m pytest -q
 ```

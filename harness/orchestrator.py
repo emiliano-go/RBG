@@ -79,8 +79,11 @@ class Orchestrator:
     def __init__(self, root: str, llm: MainLLM, *,
                  policy: Policy | None = None, selector: TestSelector | None = None,
                  learned: LearnedModels | None = None, use_reranker: bool = False,
-                 max_iterations: int = 3, context_limit: int = 15) -> None:
+                 max_iterations: int = 3, context_limit: int = 15,
+                 use_retrieval: bool = True, use_plan_audit: bool = True) -> None:
         self.root = os.path.abspath(root)
+        self.use_retrieval = use_retrieval
+        self.use_plan_audit = use_plan_audit
         self.llm = llm
         self.learned = learned
         self.policy = (learned.policy if learned and learned.risk_trained
@@ -240,12 +243,14 @@ class Orchestrator:
             report.scope_reductions.append("full_suite_not_required_by_policy")
 
         # 4. context assembly
-        hits = self.retriever.retrieve(task, limit=decision.retrieval["candidate_limit"])
-        if decision.retrieval.get("expand"):
-            hits = self.retriever.expand(hits)
-        hits = hits[:self.context_limit]
-        if self.use_reranker:
-            hits = Reranker().rerank(task, hits, self.index.chunks)[:self.context_limit]
+        hits: list[Hit] = []
+        if self.use_retrieval:
+            hits = self.retriever.retrieve(task, limit=decision.retrieval["candidate_limit"])
+            if decision.retrieval.get("expand"):
+                hits = self.retriever.expand(hits)
+            hits = hits[:self.context_limit]
+            if self.use_reranker:
+                hits = Reranker().rerank(task, hits, self.index.chunks)[:self.context_limit]
         report.context_used = len(hits)
         self._log("retriever", {"query": task, "candidates": [h.to_dict() for h in hits]},
                   model_name="hybrid-rrf-v1", task_id=task_id)
@@ -289,15 +294,16 @@ class Orchestrator:
             self._log("plan_drift", {"iteration": iteration, **drift.to_dict()},
                       model_name="scope-drift-v1", task_id=task_id,
                       reasons=["missing_steps"] if drift.missing else [])
-            if (check is None or check.ok) and drift.ok():
+            if (check is None or check.ok) and (drift.ok() or not self.use_plan_audit):
                 break
             parts = []
             if check is not None and not check.ok:
                 parts.append(check.stderr or check.stdout)
                 report.failures = [f"compile: iteration {iteration}"]
-            parts.append(format_guidance(typed, drift))
+            if self.use_plan_audit:
+                parts.append(format_guidance(typed, drift))
             diagnostics = "\n".join(p for p in parts if p)
-        if drift is not None and drift.missing:
+        if drift is not None and drift.missing and self.use_plan_audit:
             report.scope_reductions.append("unmet_plan_steps:" + ",".join(drift.missing))
 
         if not diffs:

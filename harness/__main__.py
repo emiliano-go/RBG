@@ -133,7 +133,13 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument("query")
     sub.add_parser("models")
     sub.add_parser("demo")
+    for name in ("eval", "compare"):
+        p = sub.add_parser(name)
+        p.add_argument("args", nargs=argparse.REMAINDER)
     args = ap.parse_args(argv)
+    if args.cmd in ("eval", "compare"):
+        from eval.benchmark import main as bench_main
+        return bench_main([args.cmd, *args.args])
     if args.cmd == "index":
         cmd_index(args.root)
     elif args.cmd == "retrieve":
