@@ -234,6 +234,26 @@ def test_repair_loop_uses_diagnostics(tmp_path):
     assert report.iterations == 2
 
 
+def test_edits_run_in_disposable_worktree(tmp_path):
+    import subprocess
+    root = str(tmp_path / "wtrepo")
+    _make_demo_repo(root)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                    "commit", "-qm", "init"], cwd=root, check=True)
+    before = open(os.path.join(root, "shop.py")).read()
+    report = Orchestrator(root, ScriptedLLM()).run("fix the discount calculation", task_id="wt1")
+    assert report.success, report.to_dict()
+    assert "shop.py" in report.files_changed
+    # the caller's checkout is untouched ...
+    assert open(os.path.join(root, "shop.py")).read() == before
+    # ... and no worktree is left behind
+    wl = subprocess.run(["git", "-C", root, "worktree", "list"],
+                        capture_output=True, text=True).stdout.strip().splitlines()
+    assert len(wl) == 1, wl
+
+
 
 # -- MCP server facade ------------------------------------------------------ #
 def _call(name, arguments):

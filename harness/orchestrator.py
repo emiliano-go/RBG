@@ -24,6 +24,7 @@ from .plan import Plan, audit_completion, format_guidance, parse_plan, scope_dri
 from .retrieval import HybridRetriever, Hit, Reranker
 from .training import LearnedModels, test_histories
 from .verify import Ledger, Sandbox, TestOutcome, Verifier
+from .workspace import Workspace
 
 
 @dataclass
@@ -205,8 +206,21 @@ class Orchestrator:
         return remaining
 
     def run(self, task: str, task_id: str = "task-1") -> Report:
+        """Run the loop against a disposable copy of the repo when possible, so
+        a failed attempt never mutates the caller's checkout."""
+        workspace = Workspace(self.root)
+        work = workspace.setup()
+        try:
+            return self._run(task, task_id, work)
+        finally:
+            workspace.cleanup()
+
+    def _run(self, task: str, task_id: str, work: str) -> Report:
+        if work != self.root:
+            self.sandbox = Sandbox(work, timeout_s=90)
+            self.verifier = Verifier(self.sandbox)
         # 2. repository snapshot
-        self.index = RepoIndex.build(self.root)
+        self.index = RepoIndex.build(work)
         self.retriever = self._retriever()
         report = Report(task_id=task_id, success=False, status="running")
 
@@ -246,10 +260,10 @@ class Orchestrator:
             if not edits:
                 report.failures.append("llm_produced_no_edits")
                 break
-            diffs = self._apply_edits(edits, self.root)
+            diffs = self._apply_edits(edits, work)
             changed = list(diffs)
             report.files_changed = changed
-            self.index = RepoIndex.build(self.root)
+            self.index = RepoIndex.build(work)
             self.retriever = self._retriever()
 
             check = self.verifier.compile_check(changed)
