@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 import tempfile
 
@@ -123,6 +124,18 @@ def cmd_demo() -> int:
     return 0 if report.success else 1
 
 
+def cmd_replay(root: str, transcript: str, task: str, in_place: bool = False) -> int:
+    from .providers import ReplayLLM
+    work = root
+    if not in_place:
+        work = os.path.join(tempfile.mkdtemp(prefix="rbg-replay-"), "repo")
+        shutil.copytree(root, work)
+    orch = Orchestrator(work, ReplayLLM.from_file(transcript))
+    report: Report = orch.run(task, task_id="replay")
+    print(json.dumps(report.to_dict(), indent=2))
+    return 0 if report.success else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="harness")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -133,6 +146,11 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument("query")
     sub.add_parser("models")
     sub.add_parser("demo")
+    p = sub.add_parser("replay")
+    p.add_argument("root")
+    p.add_argument("transcript")
+    p.add_argument("task")
+    p.add_argument("--in-place", action="store_true")
     for name in ("eval", "compare"):
         p = sub.add_parser(name)
         p.add_argument("args", nargs=argparse.REMAINDER)
@@ -148,6 +166,8 @@ def main(argv: list[str] | None = None) -> int:
         cmd_models()
     elif args.cmd == "demo":
         return cmd_demo()
+    elif args.cmd == "replay":
+        return cmd_replay(args.root, args.transcript, args.task, args.in_place)
     return 0
 
 

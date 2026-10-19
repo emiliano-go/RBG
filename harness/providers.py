@@ -82,6 +82,30 @@ def _render(task: str, context: list[Hit], plan: str = "", diagnostics: str = ""
     return "\n\n".join(parts)
 
 
+class ReplayLLM:
+    """A :class:`MainLLM` driven by a transcript authored by a session model.
+
+    The transcript is ``{"plan": str, "edits": [{"path", "content"}]}``.  Edits
+    go through :func:`parse_edits`, so the harness exercises exactly the same
+    contract as a live provider; only the transport is replaced by a file.
+    """
+
+    def __init__(self, transcript: dict) -> None:
+        self.transcript = transcript
+
+    @classmethod
+    def from_file(cls, path: str) -> "ReplayLLM":
+        with open(path, encoding="utf-8") as fh:
+            return cls(json.load(fh))
+
+    def plan(self, task: str, context: list[Hit]) -> str:
+        return str(self.transcript.get("plan") or "")
+
+    def edit(self, task: str, plan: str, context: list[Hit],
+             diagnostics: str = "") -> list[EditOp]:
+        return parse_edits(json.dumps({"edits": self.transcript.get("edits", [])}))
+
+
 def parse_edits(text: str) -> list[EditOp]:
     """Extract the edits JSON from a model reply.
 

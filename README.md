@@ -245,6 +245,10 @@ pip install -e '.[dev]'
 # run the end-to-end demo on a throwaway repo
 rbg demo
 
+# run a recorded session model (no API key) end-to-end on a real failing test
+rbg replay examples/replay examples/replay/transcript.json \
+  "fix median so even-length lists average the two middle values"
+
 # index a repo and retrieve context
 rbg index /path/to/repo
 rbg retrieve /path/to/repo "where are edits applied"

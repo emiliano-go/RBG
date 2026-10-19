@@ -1330,3 +1330,21 @@ def test_curated_suite_is_well_formed():
         for rel in t["expected_files"]:
             assert rel in t["files"] and rel in t["fix"]
             assert t["files"][rel] != t["fix"][rel]
+
+
+def test_replay_llm_uses_the_edit_contract():
+    from harness.providers import ReplayLLM
+    llm = ReplayLLM({"plan": "p", "edits": [{"path": "a.py", "content": "x = 1\n"}]})
+    assert llm.plan("t", []) == "p"
+    edits = llm.edit("t", "p", [])
+    assert [(e.path, e.content) for e in edits] == [("a.py", "x = 1\n")]
+
+
+def test_replay_example_end_to_end(tmp_path):
+    import shutil
+    from harness.__main__ import cmd_replay
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    root = tmp_path / "repo"
+    shutil.copytree(os.path.join(here, "examples", "replay"), root)
+    assert cmd_replay(str(root), str(root / "transcript.json"),
+                      "fix median for even-length lists") == 0

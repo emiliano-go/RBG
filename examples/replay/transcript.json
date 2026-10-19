@@ -1,0 +1,9 @@
+{
+  "plan": "1. Edit stats.py: the median of an even-length list must average the two middle values, not return the upper one.\n2. Run test_stats.py to confirm both odd and even lengths.\nGoal: fix median for even-length lists.",
+  "edits": [
+    {
+      "path": "stats.py",
+      "content": "def median(xs):\n    ordered = sorted(xs)\n    n = len(ordered)\n    mid = n // 2\n    if n % 2:\n        return ordered[mid]\n    return (ordered[mid - 1] + ordered[mid]) / 2\n"
+    }
+  ]
+}
