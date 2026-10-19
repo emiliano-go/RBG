@@ -23,6 +23,7 @@ import traceback
 from . import db
 from .index import RepoIndex, _tree_hash
 from .models import TestSelector
+from .paths import resolve_within
 from .plan import audit_completion, parse_plan, scope_drift
 from .retrieval import HybridRetriever, tokenize
 from .training import LearnedModels, read_ledger, train_from_ledger
@@ -290,9 +291,9 @@ def get_task_status(root: str, task_id: str) -> dict:
 
 
 _PROFILES = {
-    "compile": "{py} -m py_compile .",
-    "collect_tests": "{py} -m pytest --collect-only -q",
-    "tests": "{py} -m pytest -q -rA --no-header",
+    "compile": ["-m", "py_compile", "."],
+    "collect_tests": ["-m", "pytest", "--collect-only", "-q"],
+    "tests": ["-m", "pytest", "-q", "-rA", "--no-header"],
 }
 
 
@@ -301,8 +302,7 @@ def run_checks(root: str, profile: str = "compile", timeout_s: int = 120) -> dic
     if profile not in _PROFILES:
         raise ValueError(f"unknown check profile: {profile!r}; allowed: {sorted(_PROFILES)}")
     sandbox = Sandbox(idx.root, timeout_s=min(int(timeout_s), 300))
-    command = _PROFILES[profile].format(py=f'"{sandbox.python}"')
-    result = sandbox.run(command)
+    result = sandbox.run([sandbox.python, *_PROFILES[profile]])
     return {"root": idx.root, "revision": idx.revision, "profile": profile,
             "interpreter": sandbox.python, **result.to_dict()}
 
@@ -334,9 +334,7 @@ def propose_patch(root: str, path: str, content: str) -> dict:
     """Validates a proposed patch but never writes it (spec 3.3B: proposal is
     not approval; apply_patch is deferred)."""
     idx = _index(root)
-    full = os.path.abspath(os.path.join(idx.root, path))
-    if not full.startswith(idx.root):
-        raise ValueError("path escapes repository root")
+    full = resolve_within(idx.root, path)
     before = ""
     if os.path.exists(full):
         with open(full, encoding="utf-8", errors="replace") as fh:

@@ -183,10 +183,10 @@ def test_flaky_model():
 # -- verification sandbox --------------------------------------------------- #
 def test_sandbox_blocks_escape_and_runs(tmp_path):
     sb = Sandbox(str(tmp_path))
-    out = sb.run("python3 -c \"print('hi')\"")
+    out = sb.run(["python3", "-c", "print('hi')"])
     assert out.ok and "hi" in out.stdout
     with pytest.raises(PermissionError):
-        sb.run("ls", cwd="/")
+        sb.run(["ls"], cwd="/")
 
 
 def test_parse_pytest_extracts_outcomes():

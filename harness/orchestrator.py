@@ -19,6 +19,7 @@ from typing import Protocol
 from . import db
 from .index import RepoIndex
 from .models import Policy, TestSelector, TaskFeatures, extract_features, select_action
+from .paths import resolve_within
 from .plan import Plan, audit_completion, format_guidance, parse_plan, scope_drift
 from .retrieval import HybridRetriever, Hit, Reranker
 from .training import LearnedModels, test_histories
@@ -111,9 +112,7 @@ class Orchestrator:
         """Write edits, returning path -> (before, after) for the diff."""
         diffs: dict[str, tuple[str, str]] = {}
         for e in edits:
-            full = os.path.abspath(os.path.join(root, e.path))
-            if not full.startswith(root):
-                raise PermissionError(f"edit escapes root: {e.path}")
+            full = resolve_within(root, e.path)
             before = ""
             if os.path.exists(full):
                 with open(full, encoding="utf-8", errors="replace") as fh:
@@ -170,7 +169,7 @@ class Orchestrator:
         return decision, uncertainty, ood
 
     def _discover_tests(self) -> list[dict]:
-        res = self.sandbox.run(f'"{self.sandbox.python}" -m pytest --collect-only -q 2>/dev/null')
+        res = self.sandbox.run([self.sandbox.python, "-m", "pytest", "--collect-only", "-q"])
         tests: list[dict] = []
         for line in res.stdout.splitlines():
             line = line.strip()

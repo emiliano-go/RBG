@@ -17,8 +17,15 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-SECRET_HINTS = ("TOKEN", "SECRET", "PASSWORD", "API_KEY", "PRIVATE", "CREDENTIAL")
+from .isolation import Isolation, IsolationUnavailable, select as select_isolation
+from .paths import resolve_within
+
 SCHEMA_VERSION = 1
+# An allowlist, not a denylist: a secret is leaked by any variable we forget to
+# name, so only a known-safe set of variables reaches a sandboxed command.
+_ENV_ALLOW = ("PATH", "HOME", "LANG", "TMPDIR", "TEMP", "TMP", "USER",
+              "LOGNAME", "VIRTUAL_ENV", "PYTHONPATH", "PYTHONHOME")
+_ENV_ALLOW_PREFIX = ("LC_", "PYTHON")
 
 
 @dataclass
@@ -30,6 +37,9 @@ class CommandResult:
     stderr: str
     duration_ms: int
     timed_out: bool = False
+    isolation: str = "none"
+    isolated: bool = False
+    network_disabled: bool = False
 
     @property
     def ok(self) -> bool:
@@ -39,6 +49,8 @@ class CommandResult:
         return {
             "command": self.command, "cwd": self.cwd, "exit_code": self.exit_code,
             "duration_ms": self.duration_ms, "timed_out": self.timed_out,
+            "isolation": self.isolation, "isolated": self.isolated,
+            "network_disabled": self.network_disabled,
             "stdout_tail": self.stdout[-2000:], "stderr_tail": self.stderr[-2000:],
         }
 
@@ -58,6 +70,13 @@ class Sandbox:
         self.network = network
         self.python = self._resolve_python(self.root)
         self.log: list[CommandResult] = []
+        self._isolation: Isolation | None = None
+
+    def isolation(self) -> Isolation:
+        """Selected once per sandbox; raises if no backend and no escape hatch."""
+        if self._isolation is None:
+            self._isolation = select_isolation(self.network)
+        return self._isolation
 
     @staticmethod
     def _resolve_python(root: str) -> str:
@@ -69,11 +88,12 @@ class Sandbox:
         return "python3"
 
     def _env(self) -> dict[str, str]:
+        allow = set(_ENV_ALLOW)
+        allow.update(e for e in os.environ.get("HARNESS_ENV_ALLOW", "").split(",") if e)
         env = {}
         for k, v in os.environ.items():
-            if any(h in k.upper() for h in SECRET_HINTS):
-                continue
-            env[k] = v
+            if k in allow or any(k.startswith(p) for p in _ENV_ALLOW_PREFIX):
+                env[k] = v
         env["HARNESS_SANDBOX"] = "1"
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         if not self.network:
@@ -81,15 +101,18 @@ class Sandbox:
             env["NO_NETWORK"] = "1"
         return env
 
-    def run(self, command: str, cwd: str | None = None, timeout_s: int | None = None) -> CommandResult:
-        cwd = os.path.abspath(cwd or self.root)
-        if not cwd.startswith(self.root):
-            raise PermissionError(f"cwd escapes sandbox root: {cwd}")
+    def run(self, argv: list[str], cwd: str | None = None, timeout_s: int | None = None) -> CommandResult:
+        if not argv or isinstance(argv, str):
+            raise TypeError("Sandbox.run takes a non-empty argv list, never a shell string")
+        cwd = resolve_within(self.root, cwd or self.root)
+        iso = self.isolation()
+        full = [*iso.prefix, *argv]
+        command = " ".join(argv)
         started = time.monotonic()
         timed_out = False
         try:
             proc = subprocess.run(
-                command, shell=True, cwd=cwd, env=self._env(),
+                full, shell=False, cwd=cwd, env=self._env(),
                 capture_output=True, text=True, timeout=timeout_s or self.timeout_s,
                 preexec_fn=_limits,
             )
@@ -100,7 +123,8 @@ class Sandbox:
             out = (exc.stdout or b"").decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")
             err = (exc.stderr or b"").decode() if isinstance(exc.stderr, bytes) else (exc.stderr or "")
         result = CommandResult(command, cwd, code, out, err,
-                               int((time.monotonic() - started) * 1000), timed_out)
+                               int((time.monotonic() - started) * 1000), timed_out,
+                               iso.backend, iso.isolated, iso.network_disabled)
         self.log.append(result)
         return result
 
@@ -137,23 +161,24 @@ class Verifier:
         self.sandbox = sandbox
 
     def compile_check(self, paths: list[str]) -> CommandResult:
-        targets = " ".join(f'"{p}"' for p in paths) if paths else "."
-        return self.sandbox.run(f'"{self.sandbox.python}" -m py_compile {targets}')
+        targets = list(paths) or ["."]
+        return self.sandbox.run([self.sandbox.python, "-m", "py_compile", *targets])
 
     def typecheck_available(self) -> bool:
         """True when the interpreter can import a type checker, so a missing
         checker is reported as unverified rather than silently scored clean."""
-        return self.sandbox.run(
-            f'"{self.sandbox.python}" -c "import mypy"').ok
+        return self.sandbox.run([self.sandbox.python, "-c", "import mypy"]).ok
 
     def typecheck(self, paths: list[str] | None = None) -> CommandResult:
-        target = " ".join(f'"{p}"' for p in paths) if paths else "."
+        targets = list(paths) if paths else ["."]
         return self.sandbox.run(
-            f'"{self.sandbox.python}" -m mypy {target} --ignore-missing-imports')
+            [self.sandbox.python, "-m", "mypy", *targets, "--ignore-missing-imports"])
 
     def run_tests(self, test_paths: list[str] | None = None, timeout_s: int = 120) -> tuple[CommandResult, list[TestOutcome]]:
-        sel = " ".join(f'"{p}"' for p in test_paths) if test_paths else ""
-        res = self.sandbox.run(f'"{self.sandbox.python}" -m pytest {sel} -q -rA --no-header', timeout_s=timeout_s)
+        sel = list(test_paths) if test_paths else []
+        res = self.sandbox.run(
+            [self.sandbox.python, "-m", "pytest", *sel, "-q", "-rA", "--no-header"],
+            timeout_s=timeout_s)
         return res, parse_pytest(res.stdout + "\n" + res.stderr)
 
 
