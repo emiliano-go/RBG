@@ -255,7 +255,7 @@ class Orchestrator:
         uncovered = sorted({h.path for h in hits if h.path not in covered})
         report.drift.append({"stage": "plan", "retrieval_uncovered": uncovered})
         diagnostics = ""
-        diffs: dict[str, tuple[str, str]] = {}
+        diffs: dict[str, tuple[str, str]] = {}   # cumulative, original -> latest
         drift = None
         for iteration in range(1, self.max_iterations + 1):
             report.iterations = iteration
@@ -263,7 +263,10 @@ class Orchestrator:
             if not edits:
                 report.failures.append("llm_produced_no_edits")
                 break
-            diffs = self._apply_edits(edits, work)
+            for path, (before, after) in self._apply_edits(edits, work).items():
+                # keep the pre-loop original so the diff is the whole change, not
+                # just the last iteration's delta for repeatedly-edited files
+                diffs[path] = (diffs[path][0] if path in diffs else before, after)
             changed = list(diffs)
             report.files_changed = changed
             self.index = RepoIndex.build(work)

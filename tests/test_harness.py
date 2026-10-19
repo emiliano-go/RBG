@@ -234,6 +234,28 @@ def test_repair_loop_uses_diagnostics(tmp_path):
     assert report.iterations == 2
 
 
+def test_loop_unions_edits_across_iterations(tmp_path):
+    from harness.orchestrator import EditOp
+
+    class TwoFileLLM:
+        def __init__(self):
+            self.calls = 0
+
+        def plan(self, task, context):
+            return "attempt"
+
+        def edit(self, task, plan, context, diagnostics=""):
+            self.calls += 1
+            if self.calls == 1:
+                return [EditOp("a.py", "def broken(:\n    pass\n")]
+            return [EditOp("b.py", "def ok():\n    return 1\n")]
+
+    root = str(tmp_path / "repo_union")
+    _make_demo_repo(root)
+    report = Orchestrator(root, TwoFileLLM(), max_iterations=2).run("fix it", task_id="union")
+    assert set(report.files_changed) == {"a.py", "b.py"}
+
+
 def test_edits_run_in_disposable_worktree(tmp_path):
     import subprocess
     root = str(tmp_path / "wtrepo")
