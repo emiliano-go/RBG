@@ -18,6 +18,7 @@ import fnmatch
 import json
 import os
 import sys
+import time
 import traceback
 
 from . import db
@@ -37,6 +38,15 @@ _INDEX_CACHE: dict[str, RepoIndex] = {}
 _INDEX_SIGNATURE: dict[str, str] = {}
 _LEARNED_CACHE: dict[str, LearnedModels] = {}
 _RETRIEVER_CACHE: dict[str, HybridRetriever] = {}
+
+# Advisory read-path budget.  A retrieval result is still returned when the soft
+# budget is exceeded, but it is reported as degraded (and the optional reranker
+# is skipped) so a caller learns the answer was cheap rather than complete.
+_READ_BUDGET_MS = int(os.environ.get("HARNESS_READ_BUDGET_MS", "1500"))
+
+
+def _read_budget(timeout_ms: int | None = None) -> float:
+    return float(_READ_BUDGET_MS if timeout_ms is None else max(0, int(timeout_ms)))
 _STORE_CACHE: dict[str, "db.Store | None"] = {}
 
 
@@ -124,22 +134,32 @@ def _retriever(root: str) -> HybridRetriever:
 
 
 def _learned(root: str, retrain: bool = False) -> LearnedModels:
-    """Trained models for a repo, cached by revision.  A model persisted for the
-    current revision (same ledger length) is reloaded rather than refit; the
-    ledger growing past it forces a retrain."""
+    """Trained models for a repo.
+
+    The read path never trains: it loads a model persisted for the current
+    revision *and* ledger size (a cheap ``COUNT(*)``), or returns an empty set.
+    Training happens only through the explicit ``train_models`` tool, so no
+    retrieval or impact query ever pays to refit.
+    """
     idx = _index(root)
-    key = f"{idx.root}:{idx.revision}"
-    if retrain or key not in _LEARNED_CACHE:
-        store = _store(idx.root)
+    store = _store(idx.root)
+    key = f"{idx.root}:{idx.revision}:{store.ledger_count()}"
+    if retrain:
+        models = train_from_ledger(idx.root, index=idx, store=store)
+        for k in [k for k in _LEARNED_CACHE if k.startswith(idx.root + ":")]:
+            _LEARNED_CACHE.pop(k, None)
+        _LEARNED_CACHE[key] = models
+        return models
+    if key in _LEARNED_CACHE:
+        return _LEARNED_CACHE[key]
+    models = None
+    try:
+        got = store.load_model_at("learned", idx.revision)
+        if got is not None and got[2].get("ledger_n") == store.ledger_count():
+            models = got[0]
+    except Exception:
         models = None
-        if not retrain:
-            try:
-                got = store.load_model_at("learned", idx.revision)
-                if got is not None and got[2].get("ledger_n") == len(store.read_ledger()):
-                    models = got[0]
-            except Exception:
-                models = None
-        _LEARNED_CACHE[key] = models or train_from_ledger(idx.root, index=idx, store=store)
+    _LEARNED_CACHE[key] = models or LearnedModels()
     return _LEARNED_CACHE[key]
 
 
@@ -147,37 +167,51 @@ def _learned(root: str, retrain: bool = False) -> LearnedModels:
 # Tool handlers.  Each returns a JSON-serialisable dict.
 # --------------------------------------------------------------------------- #
 def search_code(root: str, query: str, limit: int = 10, dense: bool = True,
-                include: list[str] | None = None, exclude: list[str] | None = None) -> dict:
+                include: list[str] | None = None, exclude: list[str] | None = None,
+                timeout_ms: int | None = None) -> dict:
+    t0 = time.perf_counter()
+    budget = _read_budget(timeout_ms)
     idx = _index(root)
     learned = _learned(root)
-    reranker = learned.reranker if learned and learned.reranker else None
     retr = _retriever(root)
+    reranker = (learned.reranker if learned and learned.reranker
+                and (time.perf_counter() - t0) * 1000 <= budget else None)
     retr.reranker = reranker
     hits = retr.retrieve(query, limit=int(limit), include=include, exclude=exclude)
+    latency_ms = round((time.perf_counter() - t0) * 1000, 1)
     return {
         "root": idx.root, "revision": idx.revision, "query": query,
         "index_fresh": _index_fresh(idx),
         "encoder": type(retr.encoder).__name__,
-        "reranker": "trained" if reranker else "off",
+        "reranker": "trained" if reranker else ("off" if not (learned and learned.reranker) else "skipped_over_budget"),
+        "latency_ms": latency_ms, "budget_ms": budget,
+        "degraded": latency_ms > budget,
         "results": [h.to_dict() for h in hits],
     }
 
 
 def retrieve_context(root: str, query: str, limit: int = 8, expand: bool = True,
-                     include: list[str] | None = None, exclude: list[str] | None = None) -> dict:
+                     include: list[str] | None = None, exclude: list[str] | None = None,
+                     timeout_ms: int | None = None) -> dict:
+    t0 = time.perf_counter()
+    budget = _read_budget(timeout_ms)
     idx = _index(root)
     learned = _learned(root)
-    reranker = learned.reranker if learned and learned.reranker else None
     retr = _retriever(root)
+    reranker = (learned.reranker if learned and learned.reranker
+                and (time.perf_counter() - t0) * 1000 <= budget else None)
     retr.reranker = reranker
     hits = retr.retrieve(query, limit=int(limit), include=include, exclude=exclude)
     if expand:
         hits = retr.expand(hits)[: int(limit)]
     tokens = sum(len(h.content) for h in hits) // 4
+    latency_ms = round((time.perf_counter() - t0) * 1000, 1)
     return {
         "root": idx.root, "revision": idx.revision, "query": query,
         "index_fresh": _index_fresh(idx),
         "context_token_estimate": tokens,
+        "latency_ms": latency_ms, "budget_ms": budget,
+        "degraded": latency_ms > budget,
         "chunks": [h.to_dict() for h in hits],
     }
 
@@ -246,7 +280,9 @@ def plan_audit(root: str, plan_text: str, task: str = "",
 
     Parses a free-text plan against the repo's real files, then reports the
     scope drift against ``changed_files`` and the completeness gap (callers of
-    the changed symbols that were neither edited nor retrieved).  No LLM.
+    the changed symbols that were neither edited nor named in the plan).  No
+    LLM, and deliberately no retriever: fitting the LSA projector here bought
+    nothing the plan's own file list does not already supply.
     """
     idx = _index(root)
     changed = list(changed_files or [])
@@ -255,8 +291,7 @@ def plan_audit(root: str, plan_text: str, task: str = "",
     changed_norm = {p.replace("\\", "/").lstrip("./") for p in changed}
     syms = sorted({c.symbol for c in idx.chunks
                    if c.path.replace("\\", "/").lstrip("./") in changed_norm and c.symbol})
-    hits = _retriever(root).retrieve(task or plan_text, limit=8)
-    comp = audit_completion(idx, syms, changed, [h.path for h in hits])
+    comp = audit_completion(idx, syms, changed, sorted(set(plan.all_files())))
     return {
         "root": idx.root, "revision": idx.revision, "advisory": True,
         "plan": plan.to_dict(), "scope_drift": drift.to_dict(),
@@ -409,7 +444,8 @@ TOOLS = {
             "root": {"type": "string", "description": "repository path"},
             "query": {"type": "string"}, "limit": {"type": "integer", "default": 10},
             "include": {"type": "array", "items": {"type": "string"}, "description": "glob filters (paths must match any)"},
-            "exclude": {"type": "array", "items": {"type": "string"}, "description": "glob filters to drop"}},
+            "exclude": {"type": "array", "items": {"type": "string"}, "description": "glob filters to drop"},
+            "timeout_ms": {"type": "integer", "description": "per-call soft latency budget (ms); over budget marks the result degraded"}},
             "required": ["root", "query"]},
     },
     "retrieve_context": {
@@ -420,7 +456,8 @@ TOOLS = {
             "limit": {"type": "integer", "default": 8},
             "expand": {"type": "boolean", "default": True},
             "include": {"type": "array", "items": {"type": "string"}, "description": "glob filters (paths must match any)"},
-            "exclude": {"type": "array", "items": {"type": "string"}, "description": "glob filters to drop"}},
+            "exclude": {"type": "array", "items": {"type": "string"}, "description": "glob filters to drop"},
+            "timeout_ms": {"type": "integer", "description": "per-call soft latency budget (ms); over budget marks the result degraded"}},
             "required": ["root", "query"]},
     },
     "find_symbol": {

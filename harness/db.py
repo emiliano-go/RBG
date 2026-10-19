@@ -285,6 +285,12 @@ class Store:
              entry.get("inputs_hash", "")))
         self.commit()
 
+    def ledger_count(self) -> int:
+        """Cheap ledger-size probe: lets the read path notice new rows without
+        loading and parsing the whole ledger."""
+        row = self.conn.execute("SELECT COUNT(*) FROM ledger").fetchone()
+        return int(row[0]) if row else 0
+
     def read_ledger(self) -> list[dict]:
         out = []
         for row in self.conn.execute(

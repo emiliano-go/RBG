@@ -1103,3 +1103,54 @@ def test_benchmark_smoke_suite_and_compare():
     assert base["metrics"]["recall_at_k"] == 0.0        # retrieval off
     assert full["metrics"]["recall_at_k"] > 0.0         # retrieval on
     assert compare(base, full)["metrics"]["recall_at_k"]["delta"] > 0
+
+
+# -- read path never trains ------------------------------------------------ #
+def test_read_path_does_not_train_models(tmp_path):
+    from harness import db as hdb
+    root, _ = _synthetic_ledger(tmp_path / "noretrain")
+    mcp_server._LEARNED_CACHE.clear()
+    mcp_server._INDEX_CACHE.clear()
+    _call("get_change_impact", {"root": root, "symbols": ["compute"]})
+    store = hdb.Store(root)
+    assert store.load_model("learned") is None        # a read tool did not train
+    store.close()
+    sc = _call("train_models", {"root": root})["result"]["structuredContent"]
+    assert sc["trained"] and sc["risk_trained"]
+
+
+def test_plan_audit_does_not_build_retriever(tmp_path):
+    root, _ = _synthetic_ledger(tmp_path / "pa")
+    mcp_server._RETRIEVER_CACHE.clear()
+    mcp_server._INDEX_CACHE.clear()
+    out = _call("plan_audit", {"root": root,
+                               "plan_text": "1. Edit src.py.\n2. Run test_src.py.",
+                               "changed_files": ["src.py"]})
+    sc = out["result"]["structuredContent"]
+    assert "scope_drift" in sc and "completeness" in sc
+    assert mcp_server._RETRIEVER_CACHE == {}
+
+
+def test_search_code_reports_latency_and_degrades_over_budget(tmp_path, monkeypatch):
+    root, _ = _synthetic_ledger(tmp_path / "budget")
+    mcp_server._INDEX_CACHE.clear()
+    mcp_server._RETRIEVER_CACHE.clear()
+    mcp_server._LEARNED_CACHE.clear()
+    _call("train_models", {"root": root})
+    monkeypatch.setattr(mcp_server, "_READ_BUDGET_MS", -1)
+    sc = _call("search_code", {"root": root, "query": "compute"})["result"]["structuredContent"]
+    assert sc["degraded"] is True and sc["reranker"] == "skipped_over_budget"
+    assert sc["latency_ms"] >= 0 and sc["budget_ms"] == -1
+    monkeypatch.setattr(mcp_server, "_READ_BUDGET_MS", 10 ** 9)
+    sc2 = _call("search_code", {"root": root, "query": "compute"})["result"]["structuredContent"]
+    assert sc2["degraded"] is False and sc2["reranker"] == "trained"
+
+
+def test_search_code_per_call_timeout_override(tmp_path):
+    root, _ = _synthetic_ledger(tmp_path / "tmo")
+    mcp_server._INDEX_CACHE.clear()
+    mcp_server._RETRIEVER_CACHE.clear()
+    mcp_server._LEARNED_CACHE.clear()
+    sc = _call("search_code", {"root": root, "query": "compute",
+                               "timeout_ms": 0})["result"]["structuredContent"]
+    assert sc["budget_ms"] == 0 and sc["degraded"] is True
