@@ -1463,3 +1463,32 @@ def test_plan_audit_finishes_multifile_fixes():
     assert off["resolution_rate"] == 0.0
     assert on["resolution_rate"] == 1.0
     assert off["mean_iterations"] < on["mean_iterations"]
+
+
+def test_swebench_retrieval_scores_gold_files(tmp_path):
+    import subprocess
+    from eval.swebench_retrieval import parse_patch_files, run_report
+    patch = ("diff --git a/target.py b/target.py\nindex 1..2 100644\n"
+             "--- a/target.py\n+++ b/target.py\n")
+    assert parse_patch_files(patch) == ["target.py"]
+    assert parse_patch_files("") == []
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "target.py").write_text("def first_n(xs, n):\n    return xs[:n - 1]\n")
+    (repo / "unrelated.py").write_text("def other():\n    return 1\n")
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",
+                    "commit", "-qm", "base"], cwd=repo, check=True)
+    sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo,
+                         capture_output=True, text=True).stdout.strip()
+
+    report = run_report([{
+        "instance_id": "local-1", "repo": str(repo), "base_commit": sha,
+        "problem_statement": "fix first_n so it returns exactly the first n items",
+        "patch": patch,
+    }], str(tmp_path / "cache"), k=5)
+    assert report["scored"] == 1
+    assert report["metrics"]["recall_at_k"] == 1.0
+    assert report["results"][0]["gold_files"] == ["target.py"]

@@ -270,6 +270,7 @@ eval/
   effectiveness.py  retrieval + test-selection metrics (Recall@k, MRR)
   perf.py           tool latency benchmark (p50/p95 + budget gate)
   retrieval_ablation.py  lexical/dense/hybrid recall@1/@k/MRR ablation
+  swebench_retrieval.py  retrieval-only SWE-bench Lite file Recall@k/MRR
   suites/smoke/     3-task suite run in CI
   suites/curated/   54 verified bugfix tasks + build.py --check
   suites/hard/      curated with the answer's names stripped + distractors
@@ -319,6 +320,10 @@ rbg eval --suite eval/suites/curated --config baseline --out curated.json
 # retrieval recall ablation on the hard suite: the query has the answer's
 # identifiers removed and every repo carries distractor modules
 python3 -m eval.retrieval_ablation eval/suites/hard --k 5
+
+# retrieval-only SWE-bench Lite: check out each base_commit and score whether
+# the retriever surfaces the files the gold patch touches
+python3 -m eval.swebench_retrieval --limit 120 --out swebench-lite.json
 
 # causal retrieval ablation: the model only sees retrieved context
 rbg eval --suite eval/suites/curated --config blind-baseline --out blind-base.json

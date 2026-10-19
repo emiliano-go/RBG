@@ -467,4 +467,4 @@ Closing the gaps the evaluation found after Phase 2.
 | C2 hard retrieval suite (multi-file + distractors, Recall@1, ablation) | **done** | 54 tasks verified; hard hybrid recall@1 0.259 > lexical 0.241 > dense 0.241; 131 tests |
 | C3 prove `plan_audit` causally (`PartialLLM` A/B) | **done** | partial-noaudit 0/8 vs partial-audit 8/8 on `suites/multifile` |
 | C4 `eval/perf.py --budget-ms` semantics | **done** | unset budget reports `ok:null`; set budget grades and exits 2 |
-| C5 SWE-bench Lite retrieval-only adapter | pending | |
+| C5 SWE-bench Lite retrieval-only adapter | **done** | `eval/swebench_retrieval.py`: base_commit checkout, problem-statement query, file Recall@k/1 + MRR vs gold patch files, local-fixture test |
