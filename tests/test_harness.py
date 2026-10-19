@@ -812,6 +812,18 @@ def test_typecheck_unverified_only_when_checker_absent(tmp_path):
     assert ("typecheck" in report.unverified) == (not ran)
 
 
+def test_no_tests_collected_is_not_verified(tmp_path):
+    from harness.__main__ import BUGGY_SHOP
+    root = tmp_path / "no_tests"
+    root.mkdir()
+    (root / "shop.py").write_text(BUGGY_SHOP)
+    report = Orchestrator(str(root), ScriptedLLM()).run("fix the discount calculation",
+                                                        task_id="nt1")
+    assert report.status == "partial", report.to_dict()
+    assert report.success is False
+    assert "tests" in report.unverified
+
+
 def test_hit_and_mcp_outputs_carry_revision(tmp_path):
     idx = _repo(tmp_path)
     hits = HybridRetriever(idx).retrieve("beta_helper", limit=3)

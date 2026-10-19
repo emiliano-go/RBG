@@ -22,6 +22,7 @@ from .models import Policy, TestSelector, TaskFeatures, extract_features, select
 from .paths import resolve_within
 from .plan import Plan, audit_completion, format_guidance, parse_plan, scope_drift
 from .retrieval import HybridRetriever, Hit, Reranker
+from .status import Gates, TerminalState, derive_status, gate_state
 from .training import LearnedModels, test_histories
 from .verify import Ledger, Sandbox, TestOutcome, Verifier
 from .workspace import Workspace
@@ -362,18 +363,27 @@ class Orchestrator:
                   task_id=task_id,
                   reasons=["affected_not_edited"] if report.completeness["affected_not_edited"] else [])
 
-        # 10-11. final checks + stop rule (evidence only)
-        compile_ok = all(c.get("exit_code") == 0 for c in report.checks_run if c["name"] == "compile")
-        typecheck_ok = all(c.get("exit_code") == 0 for c in report.checks_run if c["name"] == "typecheck")
+        # 10-11. final status, derived only from observed evidence (spec 3.2,
+        # 6.11): a gate that never ran is unverified, not a pass; tests that
+        # collected nothing do not count as passing; and an unisolated sandbox
+        # can never yield "verified".
         recovered = any(s.startswith("flaky_rerun_recovered") for s in report.scope_reductions)
-        tests_ok = not failed and (final_res.ok or final_res.exit_code == 5 or recovered)
         report.failures = [f"{o.test_id}: {o.status}" for o in failed]
-        if not any(c["name"] == "typecheck" for c in report.checks_run):
-            report.unverified.append("typecheck")
-        report.success = bool(compile_ok and typecheck_ok and tests_ok)
-        report.status = "verified" if report.success else "failed"
+        compile_gate = gate_state(report.checks_run, "compile")
+        typecheck_gate = gate_state(report.checks_run, "typecheck")
         if final_res.exit_code == 5:
+            tests_gate: bool | None = None
             report.scope_reductions.append("no_tests_collected")
+            report.unverified.append("tests")
+        else:
+            tests_gate = bool(not failed and (final_res.ok or recovered))
+        if typecheck_gate is None:
+            report.unverified.append("typecheck")
+        state = derive_status(Gates(compile=compile_gate, typecheck=typecheck_gate,
+                                    tests=tests_gate,
+                                    isolated=self.sandbox.isolation().isolated))
+        report.status = state.value
+        report.success = state is TerminalState.VERIFIED
 
         self._log("orchestrator", report.to_dict(), model_name="orchestrator-v1",
                   task_id=task_id, reasons=decision.reason_codes)
