@@ -27,6 +27,9 @@ from dataclasses import dataclass, field
 _MARKER = re.compile(r"^\s*(?:[-*]|\d+[.)]|step\s+\d+\s*[:.)]?)\s+", re.I)
 _VERIFY = re.compile(r"\b(run|test|verify|check|validate|confirm|ensure|assert|re-?run)\b", re.I)
 _EDIT = re.compile(r"\b(edit|add|update|modify|change|create|write|implement|fix|remove|delete|rename|refactor)\b", re.I)
+# Read-only steps name files they merely look at; those are not commitments to
+# change the file, so they must not become "missing" drift.
+_READ = re.compile(r"\b(inspect|read|review|examine|locate|find|search|trace|understand)\b", re.I)
 # Backticked spans, or a bare token that looks like a filename/path.
 _TOKEN = re.compile(r"`([^`]+)`|([A-Za-z0-9_][A-Za-z0-9_./\\-]*\.[A-Za-z0-9_]+)")
 
@@ -87,7 +90,7 @@ def parse_plan(text: str, known_files) -> Plan:
             continue
         desc = _MARKER.sub("", line).strip()
         files = sorted({c for c in _file_candidates(desc) if _norm(c) in known})
-        if _VERIFY.search(desc) and not _EDIT.search(desc):
+        if (_VERIFY.search(desc) or _READ.search(desc)) and not _EDIT.search(desc):
             action = "verify"
         else:
             action = "edit"

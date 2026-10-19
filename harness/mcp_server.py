@@ -23,6 +23,7 @@ import traceback
 from collections import OrderedDict
 
 from . import db
+from .checks import compile_command, detect, runner_argv
 from .index import RepoIndex, _tree_hash, _tree_signature, chunk_key
 from .models import TestSelector
 from .paths import resolve_within
@@ -538,21 +539,29 @@ def get_task_status(root: str, task_id: str) -> dict:
     return {"root": diag["root"], "task_id": task_id, "status": status, "checks": checks}
 
 
-_PROFILES = {
-    "compile": ["-m", "py_compile", "."],
-    "collect_tests": ["-m", "pytest", "--collect-only", "-q"],
-    "tests": ["-m", "pytest", "-q", "-rA", "--no-header"],
-}
+_PROFILES = ("compile", "collect_tests", "tests")
 
 
 def run_checks(root: str, profile: str = "compile", timeout_s: int = 120) -> dict:
     idx = _index(root)
     if profile not in _PROFILES:
-        raise ValueError(f"unknown check profile: {profile!r}; allowed: {sorted(_PROFILES)}")
+        raise ValueError(f"unknown check profile: {profile!r}; allowed: {list(_PROFILES)}")
     sandbox = Sandbox(idx.root, timeout_s=min(int(timeout_s), 300))
-    result = sandbox.run([sandbox.python, *_PROFILES[profile]])
-    return {"root": idx.root, "revision": idx.revision, "profile": profile,
-            "interpreter": sandbox.python, **result.to_dict()}
+    tc = detect(idx.root, python=sandbox.python)
+    if profile == "compile":
+        argv = compile_command(tc, sandbox.python, None)
+    elif profile == "collect_tests":
+        argv = ([sandbox.python, "-m", "pytest", "--collect-only", "-q"]
+                if tc.is_python else [])
+    else:
+        argv = runner_argv(tc, sandbox.python, None)
+    base = {"root": idx.root, "revision": idx.revision, "profile": profile,
+            "interpreter": sandbox.python, "language": tc.language}
+    if not argv:
+        return {**base, "skipped": True,
+                "reason": f"no {profile} command for {tc.language} repository"}
+    result = sandbox.run(argv)
+    return {**base, **result.to_dict()}
 
 
 def db_stats(root: str) -> dict:

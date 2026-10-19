@@ -13,6 +13,7 @@ import os
 import re
 import resource
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -97,6 +98,14 @@ class Sandbox:
                 env[k] = v
         env["HARNESS_SANDBOX"] = "1"
         env["PYTHONDONTWRITEBYTECODE"] = "1"
+        # The repository is mounted read-only; compile checks still want to write
+        # bytecode, so redirect it beneath the writable /tmp the sandbox exposes.
+        pycache = os.path.join(tempfile.gettempdir(), "rbg-pycache")
+        try:
+            os.makedirs(pycache, exist_ok=True)
+        except OSError:
+            pass
+        env["PYTHONPYCACHEPREFIX"] = pycache
         if not self.network:
             # advisory markers; a real deployment would add a netns/firewall
             env["NO_NETWORK"] = "1"

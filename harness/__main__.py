@@ -137,6 +137,10 @@ def cmd_replay(root: str, transcript: str, task: str, in_place: bool = False) ->
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] in ("eval", "compare"):
+        from eval.benchmark import main as bench_main
+        return bench_main(argv)
     ap = argparse.ArgumentParser(prog="harness")
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name in ("index", "retrieve"):
@@ -151,13 +155,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("transcript")
     p.add_argument("task")
     p.add_argument("--in-place", action="store_true")
-    for name in ("eval", "compare"):
-        p = sub.add_parser(name)
-        p.add_argument("args", nargs=argparse.REMAINDER)
     args = ap.parse_args(argv)
-    if args.cmd in ("eval", "compare"):
-        from eval.benchmark import main as bench_main
-        return bench_main([args.cmd, *args.args])
     if args.cmd == "index":
         cmd_index(args.root)
     elif args.cmd == "retrieve":

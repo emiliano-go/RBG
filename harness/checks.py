@@ -59,7 +59,9 @@ def detect(root: str, python: str = "python3") -> Toolchain:
 
 def compile_command(toolchain: Toolchain, python: str, paths: list[str] | None) -> list[str]:
     if toolchain.is_python:
-        return [python, "-m", "py_compile", *(paths or ["."])]
+        if paths:
+            return [python, "-m", "py_compile", *paths]
+        return [python, "-m", "compileall", "-q", "."]
     return list(toolchain.compile)
 
 

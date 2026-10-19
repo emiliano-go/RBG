@@ -40,7 +40,7 @@ def test_python_commands_use_paths_and_selection():
     tc = Toolchain("python")
     assert compile_command(tc, "python3", ["a.py", "b.py"]) == \
         ["python3", "-m", "py_compile", "a.py", "b.py"]
-    assert compile_command(tc, "python3", []) == ["python3", "-m", "py_compile", "."]
+    assert compile_command(tc, "python3", []) == ["python3", "-m", "compileall", "-q", "."]
     assert runner_argv(tc, "python3", ["t::x"]) == \
         ["python3", "-m", "pytest", "t::x", "-q", "-rA", "--no-header"]
 

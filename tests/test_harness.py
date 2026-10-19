@@ -934,6 +934,13 @@ def test_parse_plan_extracts_steps_and_files():
     assert p.all_files() == ["shop.py", "test_shop.py"]
 
 
+def test_read_only_plan_step_is_not_an_edit_commitment():
+    from harness.plan import parse_plan
+    p = parse_plan("1. Inspect shop.py and test_shop.py.\n2. Edit shop.py.",
+                   {"shop.py", "test_shop.py"})
+    assert p.edit_files() == ["shop.py"]
+
+
 def test_scope_drift_flags_missing_and_extra():
     from harness.plan import parse_plan, scope_drift
     p = parse_plan("1. Edit shop.py.\n2. Edit test_shop.py.", {"shop.py", "test_shop.py"})
@@ -1103,6 +1110,29 @@ def test_benchmark_smoke_suite_and_compare():
     assert base["metrics"]["recall_at_k"] == 0.0        # retrieval off
     assert full["metrics"]["recall_at_k"] > 0.0         # retrieval on
     assert compare(base, full)["metrics"]["recall_at_k"]["delta"] > 0
+
+
+def test_cli_eval_and_compare_forward_their_flags(tmp_path):
+    import json
+    from harness.__main__ import main
+    suite = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         "eval", "suites", "smoke")
+    out = tmp_path / "baseline.json"
+    assert main(["eval", "--suite", suite, "--config", "baseline",
+                 "--out", str(out)]) == 0
+    result = json.loads(out.read_text())
+    assert result["n"] == 3 and result["config"] == "baseline"
+    assert main(["compare", str(out), str(out)]) == 0
+
+
+def test_mcp_run_checks_compile_passes_under_the_sandbox(tmp_path):
+    root = str(tmp_path / "repo")
+    _make_demo_repo(root)
+    out = _call("run_checks", {"root": root, "profile": "compile", "timeout_s": 60})
+    assert out["result"]["isError"] is False, out["result"]["content"][0]["text"]
+    sc = out["result"]["structuredContent"]
+    assert sc["language"] == "python"
+    assert sc["exit_code"] == 0, sc.get("stdout_tail") or sc.get("stderr_tail")
 
 
 # -- read path never trains ------------------------------------------------ #
