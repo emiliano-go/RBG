@@ -20,6 +20,7 @@ import os
 import sys
 import time
 import traceback
+from collections import OrderedDict
 
 from . import db
 from .index import RepoIndex, _tree_hash, _tree_signature, chunk_key
@@ -38,6 +39,23 @@ _INDEX_CACHE: dict[str, RepoIndex] = {}
 _INDEX_SIGNATURE: dict[str, str] = {}
 _LEARNED_CACHE: dict[str, LearnedModels] = {}
 _RETRIEVER_CACHE: dict[str, HybridRetriever] = {}
+
+# Bounded LRU over retrieval payloads, keyed by repo/revision/query/filters.
+# Only the result list is cached; latency/timing fields are recomputed per call.
+_RESULT_CACHE: "OrderedDict[tuple, list]" = OrderedDict()
+_RESULT_CACHE_MAX = 256
+
+
+def _result_cached(key: tuple, build):
+    hit = _RESULT_CACHE.get(key)
+    if hit is not None:
+        _RESULT_CACHE.move_to_end(key)
+        return hit
+    val = build()
+    _RESULT_CACHE[key] = val
+    if len(_RESULT_CACHE) > _RESULT_CACHE_MAX:
+        _RESULT_CACHE.popitem(last=False)
+    return val
 
 # Advisory read-path budget.  A retrieval result is still returned when the soft
 # budget is exceeded, but it is reported as degraded (and the optional reranker
@@ -101,6 +119,8 @@ def _evict_dependents(root: str) -> None:
     _RETRIEVER_CACHE.pop(root, None)
     for key in [k for k in _LEARNED_CACHE if k == root or k.startswith(root + ":")]:
         _LEARNED_CACHE.pop(key, None)
+    for key in [k for k in _RESULT_CACHE if k[0] == root]:
+        _RESULT_CACHE.pop(key, None)
 
 
 def _index(root: str) -> RepoIndex:
@@ -192,7 +212,11 @@ def search_code(root: str, query: str, limit: int = 10, dense: bool = True,
     reranker = (learned.reranker if learned and learned.reranker
                 and (t_r - t0) * 1000 <= budget else None)
     retr.reranker = reranker
-    hits = retr.retrieve(query, limit=int(limit), include=include, exclude=exclude)
+    key = (idx.root, idx.revision, "search", query, int(limit),
+           tuple(include or ()), tuple(exclude or ()), bool(reranker))
+    results = _result_cached(key, lambda: [h.to_dict() for h in
+                                           retr.retrieve(query, limit=int(limit),
+                                                         include=include, exclude=exclude)])
     t_q = time.perf_counter()
     latency_ms = round((t_q - t0) * 1000, 1)
     return {
@@ -203,7 +227,7 @@ def search_code(root: str, query: str, limit: int = 10, dense: bool = True,
         "latency_ms": latency_ms, "budget_ms": budget,
         "degraded": latency_ms > budget,
         "timings": _timings(t0, t_i, t_l, t_r, t_q),
-        "results": [h.to_dict() for h in hits],
+        "results": [dict(d) for d in results],
     }
 
 
@@ -221,12 +245,18 @@ def retrieve_context(root: str, query: str, limit: int = 8, expand: bool = True,
     reranker = (learned.reranker if learned and learned.reranker
                 and (t_r - t0) * 1000 <= budget else None)
     retr.reranker = reranker
-    hits = retr.retrieve(query, limit=int(limit), include=include, exclude=exclude)
-    t_q = time.perf_counter()
-    if expand:
-        hits = retr.expand(hits)[: int(limit)]
+
+    def _build_context() -> list[dict]:
+        hs = retr.retrieve(query, limit=int(limit), include=include, exclude=exclude)
+        if expand:
+            hs = retr.expand(hs)[: int(limit)]
+        return [h.to_dict() for h in hs]
+
+    key = (idx.root, idx.revision, "context", query, int(limit),
+           tuple(include or ()), tuple(exclude or ()), bool(reranker), bool(expand))
+    chunks = _result_cached(key, _build_context)
     t_x = time.perf_counter()
-    tokens = sum(len(h.content) for h in hits) // 4
+    tokens = sum(int(d.get("content_chars", 0)) for d in chunks) // 4
     latency_ms = round((t_x - t0) * 1000, 1)
     return {
         "root": idx.root, "revision": idx.revision, "query": query,
@@ -234,8 +264,8 @@ def retrieve_context(root: str, query: str, limit: int = 8, expand: bool = True,
         "context_token_estimate": tokens,
         "latency_ms": latency_ms, "budget_ms": budget,
         "degraded": latency_ms > budget,
-        "timings": _timings(t0, t_i, t_l, t_r, t_q, t_x),
-        "chunks": [h.to_dict() for h in hits],
+        "timings": _timings(t0, t_i, t_l, t_r, t_x),
+        "chunks": [dict(d) for d in chunks],
     }
 
 

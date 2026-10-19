@@ -99,6 +99,24 @@ def tokenize(text: str) -> list[str]:
     return out
 
 
+_QUERY_TERM_CAP = 64
+
+
+def _clean_query(text: str) -> str:
+    """Deduplicate query tokens and cap their count so a long, repetitive query
+    does not multiply the lexical/dense scans for terms already covered."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for t in tokenize(text):
+        if t in seen:
+            continue
+        seen.add(t)
+        out.append(t)
+        if len(out) >= _QUERY_TERM_CAP:
+            break
+    return " ".join(out)
+
+
 @dataclass
 class Hit:
     path: str
@@ -478,6 +496,7 @@ class HybridRetriever:
         expand = self.expansion if expand is None else expand
         diversify = self.diversify if diversify is None else diversify
         eff_query = expand_query(query, self.bm25, self.index.chunks) if expand else query
+        eff_query = _clean_query(eff_query)
         inc = include if include is not None else self.include
         exc = exclude if exclude is not None else self.exclude
         pool = limit * 2 if diversify else limit
@@ -523,18 +542,24 @@ class HybridRetriever:
         return hits[:limit]
 
     def expand(self, hits: list[Hit], budget: int = 5) -> list[Hit]:
-        """Follow call/reference neighbours around strong hits (spec 5.2 step 6)."""
+        """Follow same-symbol neighbours around strong hits (spec 5.2 step 6).
+
+        A single symbol → chunks pass replaces the per-caller scan of every
+        chunk, so cost is O(chunks) once rather than O(hits x callers x chunks).
+        """
+        by_symbol: dict[str, list[Chunk]] = {}
+        for c in self.index.chunks:
+            if c.symbol:
+                by_symbol.setdefault(c.symbol, []).append(c)
         have = {(h.path, h.start_line) for h in hits}
         extra: list[Hit] = []
         for h in hits:
-            for caller in self.index.callers_of(h.symbol)[:2]:
-                for c in self.index.chunks:
-                    key = (c.path, c.symbol)
-                    if c.symbol == h.symbol and (c.path, c.start_line) not in have:
-                        extra.append(Hit(c.path, c.symbol, c.start_line, c.end_line,
-                                         0.01, "expand", "same_symbol", c.content_hash, c.content,
-                                         self.index.revision))
-                        have.add((c.path, c.start_line))
+            for c in by_symbol.get(h.symbol or "", []):
+                if (c.path, c.start_line) not in have:
+                    extra.append(Hit(c.path, c.symbol, c.start_line, c.end_line,
+                                     0.01, "expand", "same_symbol", c.content_hash, c.content,
+                                     self.index.revision))
+                    have.add((c.path, c.start_line))
         for h in hits:
             h.commit_hash = h.commit_hash or self.index.revision
         return hits + extra[:budget]

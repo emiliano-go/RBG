@@ -1162,3 +1162,38 @@ def test_perf_bench_reports_p95_and_budget(tmp_path):
     rep = perf._bench(lambda: sum(range(100)), 5)
     assert {"p50_ms", "p95_ms", "median_ms", "repeat"} <= set(rep)
     assert rep["p95_ms"] >= rep["p50_ms"]
+
+
+def test_clean_query_dedupes_and_caps():
+    from harness.retrieval import _QUERY_TERM_CAP, _clean_query
+    terms = _clean_query("compute compute the total total value").split()
+    assert len(terms) == len(set(terms))
+    long = " ".join(f"w{i}" for i in range(_QUERY_TERM_CAP + 50))
+    assert len(_clean_query(long).split()) <= _QUERY_TERM_CAP
+
+
+def test_expand_adds_same_symbol_sibling(tmp_path):
+    from harness.index import RepoIndex
+    from harness.retrieval import Hit, HybridRetriever
+    (tmp_path / "a.py").write_text("def shared():\n    return 1\n")
+    (tmp_path / "b.py").write_text("def shared():\n    return 2\n")
+    idx = RepoIndex.build(str(tmp_path))
+    retr = HybridRetriever(idx)
+    hit = Hit("a.py", "shared", 1, 2, 1.0, "rrf", "bm25", "h")
+    out = retr.expand([hit], budget=5)
+    assert any(h.path == "b.py" and h.symbol == "shared" for h in out)
+
+
+def test_search_code_result_cache_isolated_from_callers(tmp_path):
+    root, _ = _synthetic_ledger(tmp_path / "rc")
+    mcp_server._INDEX_CACHE.clear()
+    mcp_server._RETRIEVER_CACHE.clear()
+    mcp_server._LEARNED_CACHE.clear()
+    mcp_server._RESULT_CACHE.clear()
+    a = _call("search_code", {"root": root, "query": "compute"})["result"]["structuredContent"]
+    assert mcp_server._RESULT_CACHE and a["results"]
+    b = _call("search_code", {"root": root, "query": "compute"})["result"]["structuredContent"]
+    assert [r["chunk_id"] for r in a["results"]] == [r["chunk_id"] for r in b["results"]]
+    a["results"][0]["snippet"] = "MUTATED"
+    c = _call("search_code", {"root": root, "query": "compute"})["result"]["structuredContent"]
+    assert c["results"][0]["snippet"] != "MUTATED"
