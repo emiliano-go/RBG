@@ -24,8 +24,12 @@ import sys
 import tempfile
 from textwrap import dedent
 
+import re
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "suite.json")
+HARD_OUT = os.path.join(os.path.dirname(HERE), "hard", "suite.json")
+DISTRACTORS = 3
 
 
 def T(id: str, task: str, buggy: str, fixed: str, test: str) -> dict:
@@ -1106,8 +1110,215 @@ TASKS = [
 ]
 
 
+def M(id: str, task: str, modules: dict, fix: dict, tests: dict, expected: list) -> dict:
+    """A task whose fix spans more than one module.
+
+    The tests import only the public module, but the change cannot land
+    without touching ``expected``: retrieval has to surface all of them and
+    the plan has to commit to editing each one.
+    """
+    files = dict(modules)
+    files.update(tests)
+    return {
+        "id": id,
+        "task": task,
+        "expected_files": list(expected),
+        "files": {k: dedent(v).strip() + "\n" for k, v in files.items()},
+        "fix": {k: dedent(v).strip() + "\n" for k, v in fix.items()},
+        "expect_pass": [f"{name}::test_main" for name in tests],
+        "must_keep_passing": [f"{name}::test_guard" for name, text in tests.items()
+                              if "def test_guard" in text],
+    }
+
+
+MULTI = [
+    M("m01_rename_total",
+      "fix the off-by-one in total, rename it to sum_prices in m01_core, and update the m01_cart caller",
+      {"m01_core.py": """
+        def total(prices):
+            return sum(prices) - 1
+      """,
+       "m01_cart.py": """
+        from m01_core import total
+
+        def checkout(prices):
+            return total(prices)
+      """},
+      {"m01_core.py": """
+        def sum_prices(prices):
+            return sum(prices)
+      """,
+       "m01_cart.py": """
+        from m01_core import sum_prices
+
+        def checkout(prices):
+            return sum_prices(prices)
+      """},
+      {"test_m01.py": """
+        from m01_core import sum_prices
+        from m01_cart import checkout
+
+        def test_main():
+            assert sum_prices([2, 3]) == 5
+            assert checkout([2, 3]) == 5
+      """},
+      ["m01_core.py", "m01_cart.py"]),
+
+    M("m02_suffix_param",
+      "add a suffix parameter to money in m02_fmt and pass it from m02_invoice",
+      {"m02_fmt.py": """
+        def money(value):
+            return f"{value:.2f}"
+      """,
+       "m02_invoice.py": """
+        from m02_fmt import money
+
+        def line(value):
+            return money(value)
+      """},
+      {"m02_fmt.py": """
+        def money(value, suffix=""):
+            return f"{value:.2f}{suffix}"
+      """,
+       "m02_invoice.py": """
+        from m02_fmt import money
+
+        def line(value):
+            return money(value, " USD")
+      """},
+      {"test_m02.py": """
+        from m02_invoice import line
+
+        def test_main():
+            assert line(2) == "2.00 USD"
+      """},
+      ["m02_fmt.py", "m02_invoice.py"]),
+
+    M("m03_rename_area",
+      "fix the multiply in area, rename it to rect_area in m03_geom, and update m03_shapes",
+      {"m03_geom.py": """
+        def area(w, h):
+            return w + h
+      """,
+       "m03_shapes.py": """
+        from m03_geom import area
+
+        def square_area(side):
+            return area(side, side)
+      """},
+      {"m03_geom.py": """
+        def rect_area(w, h):
+            return w * h
+      """,
+       "m03_shapes.py": """
+        from m03_geom import rect_area
+
+        def square_area(side):
+            return rect_area(side, side)
+      """},
+      {"test_m03.py": """
+        from m03_geom import rect_area
+        from m03_shapes import square_area
+
+        def test_main():
+            assert rect_area(2, 3) == 6
+            assert square_area(3) == 9
+      """},
+      ["m03_geom.py", "m03_shapes.py"]),
+
+    M("m04_strict_param",
+      "make is_name reject non-identifiers via a strict flag in m04_validate and use it from m04_form",
+      {"m04_validate.py": """
+        def is_name(value):
+            return bool(value)
+      """,
+       "m04_form.py": """
+        from m04_validate import is_name
+
+        def field(value):
+            return is_name(value)
+      """},
+      {"m04_validate.py": """
+        def is_name(value, strict=False):
+            return value.isidentifier() if strict else bool(value)
+      """,
+       "m04_form.py": """
+        from m04_validate import is_name
+
+        def field(value):
+            return is_name(value, strict=True)
+      """},
+      {"test_m04.py": """
+        from m04_form import field
+
+        def test_main():
+            assert field("1bad") is False
+            assert field("good") is True
+      """},
+      ["m04_validate.py", "m04_form.py"]),
+]
+
+
+ALL_TASKS = TASKS + MULTI
+
+
+def _blind_query(task: dict) -> str:
+    """The task text with the answer's identifiers removed.
+
+    A curated query names the function and file it is about, which is why
+    retrieval looked trivial.  Dropping those names leaves a symptom
+    description, so ranking has to work from meaning rather than a string
+    the answer happens to contain.
+    """
+    names = set(re.findall(r"def\s+([A-Za-z_][A-Za-z0-9_]*)", "\n".join(task["files"].values())))
+    names.update(os.path.splitext(f)[0] for f in task["expected_files"])
+    text = task["task"]
+    for name in sorted(names, key=len, reverse=True):
+        text = re.sub(rf"\b{re.escape(name)}\b", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _tokens(task: dict) -> list:
+    src = "\n".join(task["files"].values()) + "\n" + task["task"]
+    seen, out = set(), []
+    for word in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", src):
+        if len(word) >= 3 and word not in seen:
+            seen.add(word)
+            out.append(word)
+    return out
+
+
+def distractors(task: dict, n: int = DISTRACTORS) -> dict:
+    """Unrelated modules that share the task's vocabulary.
+
+    They are never imported by the tests, so they cannot change pass/fail,
+    but they give retrieval near-duplicate chunks with the same identifiers,
+    strings, and words as the file that must be found, so lexical and dense
+    ranking has to actually discriminate.
+    """
+    toks = _tokens(task)
+    defs = re.findall(r"def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", "\n".join(task["files"].values()))
+    base = defs[:3] or ["helper"]
+    files = {}
+    for i in range(n):
+        start = (i * 3) % len(toks) if toks else 0
+        note = " ".join(toks[start:][:6]) if toks else task["id"]
+        lines = [f'"""Variant {i}: unrelated, but mentions {note}."""', ""]
+        for j, name in enumerate(base):
+            lines += [f"def {name}_alt{i}(*args, **kwargs):", f"    return {i} + {j}", ""]
+        files[f"distractor_{task['id']}_{i}.py"] = "\n".join(lines) + "\n"
+    return files
+
+
 def build_suite() -> dict:
-    return {"name": "curated", "tasks": TASKS}
+    return {"name": "curated", "tasks": ALL_TASKS}
+
+
+def build_hard() -> dict:
+    return {"name": "hard",
+            "tasks": [{**task, "task": _blind_query(task),
+                       "files": {**task["files"], **distractors(task)}}
+                      for task in ALL_TASKS]}
 
 
 def _run(root: str) -> subprocess.CompletedProcess:
@@ -1118,7 +1329,7 @@ def _run(root: str) -> subprocess.CompletedProcess:
 
 def check() -> int:
     failures = []
-    for task in TASKS:
+    for task in ALL_TASKS:
         root = tempfile.mkdtemp(prefix=f"curated-{task['id']}-")
         try:
             for rel, content in task["files"].items():
@@ -1129,8 +1340,9 @@ def check() -> int:
                 node = test_id.split("::")[-1]
                 if buggy.returncode != 0 and f"FAILED" in buggy.stdout and node in buggy.stdout:
                     failures.append(f"{task['id']}: guard test fails on buggy code")
-            main = task["expect_pass"][0].split("::")[-1]
-            if f"FAILED" not in buggy.stdout or main not in buggy.stdout:
+            main = task["expect_pass"][0]
+            node, test_file = main.split("::")[-1], main.split("::")[0]
+            if buggy.returncode == 0 or (node not in buggy.stdout and test_file not in buggy.stdout):
                 failures.append(f"{task['id']}: main test does not fail on buggy code")
             for rel, content in task["fix"].items():
                 with open(os.path.join(root, rel), "w", encoding="utf-8") as fh:
@@ -1143,7 +1355,7 @@ def check() -> int:
     if failures:
         print("\n".join(failures))
         return 1
-    print(f"ok: {len(TASKS)} tasks verified")
+    print(f"ok: {len(ALL_TASKS)} tasks verified")
     return 0
 
 
@@ -1153,10 +1365,12 @@ def main(argv=None) -> int:
         code = check()
         if code:
             return code
-    with open(OUT, "w", encoding="utf-8") as fh:
-        json.dump(build_suite(), fh, indent=2)
-        fh.write("\n")
-    print(f"wrote {OUT} ({len(TASKS)} tasks)")
+    for path, suite in ((OUT, build_suite()), (HARD_OUT, build_hard())):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(suite, fh, indent=2)
+            fh.write("\n")
+        print(f"wrote {path} ({len(suite['tasks'])} tasks)")
     return 0
 
 

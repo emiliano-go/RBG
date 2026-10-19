@@ -269,8 +269,10 @@ eval/
   benchmark.py      configs, metrics, and the deterministic benchmark
   effectiveness.py  retrieval + test-selection metrics (Recall@k, MRR)
   perf.py           tool latency benchmark (p50/p95 + budget gate)
+  retrieval_ablation.py  lexical/dense/hybrid recall@1/@k/MRR ablation
   suites/smoke/     3-task suite run in CI
-  suites/curated/   50 verified bugfix tasks + build.py --check
+  suites/curated/   54 verified bugfix tasks (incl. multi-file) + build.py --check
+  suites/hard/      curated with the answer's names stripped + distractors
 examples/replay/   buggy module + test + recorded transcript (no key)
 tests/
   test_harness.py   end-to-end suite
@@ -309,9 +311,13 @@ rbg eval --suite eval/suites/smoke --config baseline --out baseline.json
 rbg eval --suite eval/suites/smoke --config full --out full.json
 rbg compare baseline.json full.json
 
-# the 50-task curated bugfix suite (regenerate + verify task-by-task)
+# the curated bugfix suite (regenerate + verify task-by-task; also writes hard/)
 python3 -m eval.suites.curated.build --check
 rbg eval --suite eval/suites/curated --config baseline --out curated.json
+
+# retrieval recall ablation on the hard suite: the query has the answer's
+# identifiers removed and every repo carries distractor modules
+python3 -m eval.retrieval_ablation eval/suites/hard --k 5
 
 # causal retrieval ablation: the model only sees retrieved context
 rbg eval --suite eval/suites/curated --config blind-baseline --out blind-base.json
@@ -329,6 +335,12 @@ python3 -m pytest -q
 On the 50-task suite, `blind-baseline` resolves **0/50** (recall 0) and
 `blind-full` resolves **50/50** (recall/MRR 1.0), so the ablation measures
 retrieval causally rather than assuming it.
+
+Those queries name the function they are about, so retrieval is easy on the
+curated suite. The hard suite strips those names from the query and adds
+distractor modules that share the vocabulary: recall@1 drops to ~0.26 for the
+hybrid retriever, ahead of lexical-only and dense-only, and `pytest` fails if
+any mode ever returns to triviality.
 
 ---
 

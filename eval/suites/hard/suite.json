@@ -1,0 +1,1237 @@
+{
+  "name": "hard",
+  "tasks": [
+    {
+      "id": "c01_slice_off_by_one",
+      "task": "fix so it returns exactly the first n items",
+      "expected_files": [
+        "c01_slice_off_by_one.py"
+      ],
+      "files": {
+        "c01_slice_off_by_one.py": "def first_n(xs, n):\n    return xs[:n - 1]\n",
+        "test_c01_slice_off_by_one.py": "from c01_slice_off_by_one import first_n\n\ndef test_main():\n    assert first_n([1, 2, 3, 4], 2) == [1, 2]\n\ndef test_guard():\n    assert first_n([1, 2, 3], 10) == [1, 2, 3]\n",
+        "distractor_c01_slice_off_by_one_0.py": "\"\"\"Variant 0: unrelated, but mentions def first_n return from c01_slice_off_by_one import.\"\"\"\n\ndef first_n_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c01_slice_off_by_one_1.py": "\"\"\"Variant 1: unrelated, but mentions from c01_slice_off_by_one import test_main assert test_guard.\"\"\"\n\ndef first_n_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c01_slice_off_by_one_2.py": "\"\"\"Variant 2: unrelated, but mentions test_main assert test_guard fix returns exactly.\"\"\"\n\ndef first_n_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c01_slice_off_by_one.py": "def first_n(xs, n):\n    return xs[:n]\n"
+      },
+      "expect_pass": [
+        "test_c01_slice_off_by_one.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c01_slice_off_by_one.py::test_guard"
+      ]
+    },
+    {
+      "id": "c02_inclusive_upper",
+      "task": "fix so an upper bound is inclusive",
+      "expected_files": [
+        "c02_inclusive_upper.py"
+      ],
+      "files": {
+        "c02_inclusive_upper.py": "def in_range(x, lo, hi):\n    return lo <= x < hi\n",
+        "test_c02_inclusive_upper.py": "from c02_inclusive_upper import in_range\n\ndef test_main():\n    assert in_range(5, 0, 5) is True\n\ndef test_guard():\n    assert in_range(6, 0, 5) is False\n",
+        "distractor_c02_inclusive_upper_0.py": "\"\"\"Variant 0: unrelated, but mentions def in_range return from c02_inclusive_upper import.\"\"\"\n\ndef in_range_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c02_inclusive_upper_1.py": "\"\"\"Variant 1: unrelated, but mentions from c02_inclusive_upper import test_main assert True.\"\"\"\n\ndef in_range_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c02_inclusive_upper_2.py": "\"\"\"Variant 2: unrelated, but mentions test_main assert True test_guard False fix.\"\"\"\n\ndef in_range_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c02_inclusive_upper.py": "def in_range(x, lo, hi):\n    return lo <= x <= hi\n"
+      },
+      "expect_pass": [
+        "test_c02_inclusive_upper.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c02_inclusive_upper.py::test_guard"
+      ]
+    },
+    {
+      "id": "c03_empty_first",
+      "task": "fix so it handles an empty list",
+      "expected_files": [
+        "c03_empty_first.py"
+      ],
+      "files": {
+        "c03_empty_first.py": "def first_or_none(xs):\n    return xs[0]\n",
+        "test_c03_empty_first.py": "from c03_empty_first import first_or_none\n\ndef test_main():\n    assert first_or_none([]) is None\n\ndef test_guard():\n    assert first_or_none([7]) == 7\n",
+        "distractor_c03_empty_first_0.py": "\"\"\"Variant 0: unrelated, but mentions def first_or_none return from c03_empty_first import.\"\"\"\n\ndef first_or_none_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c03_empty_first_1.py": "\"\"\"Variant 1: unrelated, but mentions from c03_empty_first import test_main assert None.\"\"\"\n\ndef first_or_none_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c03_empty_first_2.py": "\"\"\"Variant 2: unrelated, but mentions test_main assert None test_guard fix handles.\"\"\"\n\ndef first_or_none_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c03_empty_first.py": "def first_or_none(xs):\n    return xs[0] if xs else None\n"
+      },
+      "expect_pass": [
+        "test_c03_empty_first.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c03_empty_first.py::test_guard"
+      ]
+    },
+    {
+      "id": "c04_mutable_default",
+      "task": "fix so repeated calls do not share one default list",
+      "expected_files": [
+        "c04_mutable_default.py"
+      ],
+      "files": {
+        "c04_mutable_default.py": "def add(item, acc=[]):\n    acc.append(item)\n    return acc\n",
+        "test_c04_mutable_default.py": "from c04_mutable_default import add\n\ndef test_main():\n    assert add(1) == [1]\n    assert add(2) == [2]\n\ndef test_guard():\n    assert add(2, [1]) == [1, 2]\n",
+        "distractor_c04_mutable_default_0.py": "\"\"\"Variant 0: unrelated, but mentions def add item acc append return.\"\"\"\n\ndef add_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c04_mutable_default_1.py": "\"\"\"Variant 1: unrelated, but mentions acc append return from c04_mutable_default import.\"\"\"\n\ndef add_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c04_mutable_default_2.py": "\"\"\"Variant 2: unrelated, but mentions from c04_mutable_default import test_main assert test_guard.\"\"\"\n\ndef add_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c04_mutable_default.py": "def add(item, acc=None):\n    acc = [] if acc is None else acc\n    acc.append(item)\n    return acc\n"
+      },
+      "expect_pass": [
+        "test_c04_mutable_default.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c04_mutable_default.py::test_guard"
+      ]
+    },
+    {
+      "id": "c05_missing_key",
+      "task": "fix so a missing key returns None instead of raising",
+      "expected_files": [
+        "c05_missing_key.py"
+      ],
+      "files": {
+        "c05_missing_key.py": "def lookup(d, k):\n    return d[k]\n",
+        "test_c05_missing_key.py": "from c05_missing_key import lookup\n\ndef test_main():\n    assert lookup({}, \"x\") is None\n\ndef test_guard():\n    assert lookup({\"x\": 3}, \"x\") == 3\n",
+        "distractor_c05_missing_key_0.py": "\"\"\"Variant 0: unrelated, but mentions def lookup return from c05_missing_key import.\"\"\"\n\ndef lookup_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c05_missing_key_1.py": "\"\"\"Variant 1: unrelated, but mentions from c05_missing_key import test_main assert None.\"\"\"\n\ndef lookup_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c05_missing_key_2.py": "\"\"\"Variant 2: unrelated, but mentions test_main assert None test_guard fix missing.\"\"\"\n\ndef lookup_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c05_missing_key.py": "def lookup(d, k):\n    return d.get(k)\n"
+      },
+      "expect_pass": [
+        "test_c05_missing_key.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c05_missing_key.py::test_guard"
+      ]
+    },
+    {
+      "id": "c06_divide_zero",
+      "task": "fix so dividing by zero returns 0",
+      "expected_files": [
+        "c06_divide_zero.py"
+      ],
+      "files": {
+        "c06_divide_zero.py": "def safe_div(a, b):\n    return a / b\n",
+        "test_c06_divide_zero.py": "from c06_divide_zero import safe_div\n\ndef test_main():\n    assert safe_div(3, 0) == 0\n\ndef test_guard():\n    assert safe_div(6, 3) == 2\n",
+        "distractor_c06_divide_zero_0.py": "\"\"\"Variant 0: unrelated, but mentions def safe_div return from c06_divide_zero import.\"\"\"\n\ndef safe_div_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c06_divide_zero_1.py": "\"\"\"Variant 1: unrelated, but mentions from c06_divide_zero import test_main assert test_guard.\"\"\"\n\ndef safe_div_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c06_divide_zero_2.py": "\"\"\"Variant 2: unrelated, but mentions test_main assert test_guard fix dividing zero.\"\"\"\n\ndef safe_div_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c06_divide_zero.py": "def safe_div(a, b):\n    return a / b if b else 0\n"
+      },
+      "expect_pass": [
+        "test_c06_divide_zero.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c06_divide_zero.py::test_guard"
+      ]
+    },
+    {
+      "id": "c07_int_average",
+      "task": "fix so it keeps the fractional part",
+      "expected_files": [
+        "c07_int_average.py"
+      ],
+      "files": {
+        "c07_int_average.py": "def average(a, b):\n    return (a + b) // 2\n",
+        "test_c07_int_average.py": "from c07_int_average import average\n\ndef test_main():\n    assert average(2, 3) == 2.5\n\ndef test_guard():\n    assert average(2, 4) == 3.0\n",
+        "distractor_c07_int_average_0.py": "\"\"\"Variant 0: unrelated, but mentions def average return from c07_int_average import.\"\"\"\n\ndef average_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c07_int_average_1.py": "\"\"\"Variant 1: unrelated, but mentions from c07_int_average import test_main assert test_guard.\"\"\"\n\ndef average_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c07_int_average_2.py": "\"\"\"Variant 2: unrelated, but mentions test_main assert test_guard fix keeps the.\"\"\"\n\ndef average_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c07_int_average.py": "def average(a, b):\n    return (a + b) / 2\n"
+      },
+      "expect_pass": [
+        "test_c07_int_average.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c07_int_average.py::test_guard"
+      ]
+    },
+    {
+      "id": "c08_float_equality",
+      "task": "fix so float rounding is tolerated",
+      "expected_files": [
+        "c08_float_equality.py"
+      ],
+      "files": {
+        "c08_float_equality.py": "def nearly_equal(a, b):\n    return a == b\n",
+        "test_c08_float_equality.py": "from c08_float_equality import nearly_equal\n\ndef test_main():\n    assert nearly_equal(0.1 + 0.2, 0.3) is True\n\ndef test_guard():\n    assert nearly_equal(1.0, 1.0) is True\n",
+        "distractor_c08_float_equality_0.py": "\"\"\"Variant 0: unrelated, but mentions def nearly_equal return from c08_float_equality import.\"\"\"\n\ndef nearly_equal_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c08_float_equality_1.py": "\"\"\"Variant 1: unrelated, but mentions from c08_float_equality import test_main assert True.\"\"\"\n\ndef nearly_equal_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c08_float_equality_2.py": "\"\"\"Variant 2: unrelated, but mentions test_main assert True test_guard fix float.\"\"\"\n\ndef nearly_equal_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c08_float_equality.py": "def nearly_equal(a, b):\n    return abs(a - b) < 1e-9\n"
+      },
+      "expect_pass": [
+        "test_c08_float_equality.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c08_float_equality.py::test_guard"
+      ]
+    },
+    {
+      "id": "c09_round_number",
+      "task": "fix so 2.6 rounds to 3",
+      "expected_files": [
+        "c09_round_number.py"
+      ],
+      "files": {
+        "c09_round_number.py": "def round_number(x):\n    return int(x)\n",
+        "test_c09_round_number.py": "from c09_round_number import round_number\n\ndef test_main():\n    assert round_number(2.6) == 3\n\ndef test_guard():\n    assert round_number(2.4) == 2\n",
+        "distractor_c09_round_number_0.py": "\"\"\"Variant 0: unrelated, but mentions def round_number return int from c09_round_number.\"\"\"\n\ndef round_number_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c09_round_number_1.py": "\"\"\"Variant 1: unrelated, but mentions int from c09_round_number import test_main assert.\"\"\"\n\ndef round_number_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c09_round_number_2.py": "\"\"\"Variant 2: unrelated, but mentions import test_main assert test_guard fix rounds.\"\"\"\n\ndef round_number_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c09_round_number.py": "def round_number(x):\n    return round(x)\n"
+      },
+      "expect_pass": [
+        "test_c09_round_number.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c09_round_number.py::test_guard"
+      ]
+    },
+    {
+      "id": "c10_split_empty",
+      "task": "fix so an empty string yields no fields",
+      "expected_files": [
+        "c10_split_empty.py"
+      ],
+      "files": {
+        "c10_split_empty.py": "def split_csv(s):\n    return s.split(\",\")\n",
+        "test_c10_split_empty.py": "from c10_split_empty import split_csv\n\ndef test_main():\n    assert split_csv(\"\") == []\n\ndef test_guard():\n    assert split_csv(\"a,b\") == [\"a\", \"b\"]\n",
+        "distractor_c10_split_empty_0.py": "\"\"\"Variant 0: unrelated, but mentions def split_csv return split from c10_split_empty.\"\"\"\n\ndef split_csv_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c10_split_empty_1.py": "\"\"\"Variant 1: unrelated, but mentions split from c10_split_empty import test_main assert.\"\"\"\n\ndef split_csv_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c10_split_empty_2.py": "\"\"\"Variant 2: unrelated, but mentions import test_main assert test_guard fix empty.\"\"\"\n\ndef split_csv_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c10_split_empty.py": "def split_csv(s):\n    return s.split(\",\") if s else []\n"
+      },
+      "expect_pass": [
+        "test_c10_split_empty.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c10_split_empty.py::test_guard"
+      ]
+    },
+    {
+      "id": "c11_join_numbers",
+      "task": "fix so integers can be joined",
+      "expected_files": [
+        "c11_join_numbers.py"
+      ],
+      "files": {
+        "c11_join_numbers.py": "def join_numbers(nums):\n    return \",\".join(nums)\n",
+        "test_c11_join_numbers.py": "from c11_join_numbers import join_numbers\n\ndef test_main():\n    assert join_numbers([1, 2]) == \"1,2\"\n\ndef test_guard():\n    assert join_numbers([\"a\", \"b\"]) == \"a,b\"\n",
+        "distractor_c11_join_numbers_0.py": "\"\"\"Variant 0: unrelated, but mentions def join_numbers nums return join from.\"\"\"\n\ndef join_numbers_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c11_join_numbers_1.py": "\"\"\"Variant 1: unrelated, but mentions return join from c11_join_numbers import test_main.\"\"\"\n\ndef join_numbers_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c11_join_numbers_2.py": "\"\"\"Variant 2: unrelated, but mentions c11_join_numbers import test_main assert test_guard fix.\"\"\"\n\ndef join_numbers_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c11_join_numbers.py": "def join_numbers(nums):\n    return \",\".join(map(str, nums))\n"
+      },
+      "expect_pass": [
+        "test_c11_join_numbers.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c11_join_numbers.py::test_guard"
+      ]
+    },
+    {
+      "id": "c12_percent_format",
+      "task": "fix so 0.5 renders as 50%",
+      "expected_files": [
+        "c12_percent_format.py"
+      ],
+      "files": {
+        "c12_percent_format.py": "def as_percent(x):\n    return f\"{x}%\"\n",
+        "test_c12_percent_format.py": "from c12_percent_format import as_percent\n\ndef test_main():\n    assert as_percent(0.5) == \"50%\"\n",
+        "distractor_c12_percent_format_0.py": "\"\"\"Variant 0: unrelated, but mentions def as_percent return from c12_percent_format import.\"\"\"\n\ndef as_percent_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\n",
+        "distractor_c12_percent_format_1.py": "\"\"\"Variant 1: unrelated, but mentions from c12_percent_format import test_main assert fix.\"\"\"\n\ndef as_percent_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\n",
+        "distractor_c12_percent_format_2.py": "\"\"\"Variant 2: unrelated, but mentions test_main assert fix renders.\"\"\"\n\ndef as_percent_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\n"
+      },
+      "fix": {
+        "c12_percent_format.py": "def as_percent(x):\n    return f\"{x:.0%}\"\n"
+      },
+      "expect_pass": [
+        "test_c12_percent_format.py::test_main"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "c13_regex_literal_dot",
+      "task": "fix so the dot is matched literally",
+      "expected_files": [
+        "c13_regex_literal_dot.py"
+      ],
+      "files": {
+        "c13_regex_literal_dot.py": "import re\n\ndef is_dot(s):\n    return bool(re.fullmatch(\".\", s))\n",
+        "test_c13_regex_literal_dot.py": "from c13_regex_literal_dot import is_dot\n\ndef test_main():\n    assert is_dot(\".\") is True\n    assert is_dot(\"a\") is False\n\ndef test_guard():\n    assert is_dot(\".\") is True\n",
+        "distractor_c13_regex_literal_dot_0.py": "\"\"\"Variant 0: unrelated, but mentions import def is_dot return bool fullmatch.\"\"\"\n\ndef is_dot_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c13_regex_literal_dot_1.py": "\"\"\"Variant 1: unrelated, but mentions return bool fullmatch from c13_regex_literal_dot test_main.\"\"\"\n\ndef is_dot_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c13_regex_literal_dot_2.py": "\"\"\"Variant 2: unrelated, but mentions from c13_regex_literal_dot test_main assert True False.\"\"\"\n\ndef is_dot_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c13_regex_literal_dot.py": "import re\n\ndef is_dot(s):\n    return bool(re.fullmatch(r\"\\.\", s))\n"
+      },
+      "expect_pass": [
+        "test_c13_regex_literal_dot.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c13_regex_literal_dot.py::test_guard"
+      ]
+    },
+    {
+      "id": "c14_dict_delete_iter",
+      "task": "fix so it can delete while iterating",
+      "expected_files": [
+        "c14_dict_delete_iter.py"
+      ],
+      "files": {
+        "c14_dict_delete_iter.py": "def clear_dict(d):\n    for k in d:\n        del d[k]\n    return d\n",
+        "test_c14_dict_delete_iter.py": "from c14_dict_delete_iter import clear_dict\n\ndef test_main():\n    assert clear_dict({\"a\": 1, \"b\": 2}) == {}\n\ndef test_guard():\n    assert clear_dict({}) == {}\n",
+        "distractor_c14_dict_delete_iter_0.py": "\"\"\"Variant 0: unrelated, but mentions def clear_dict for del return from.\"\"\"\n\ndef clear_dict_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c14_dict_delete_iter_1.py": "\"\"\"Variant 1: unrelated, but mentions del return from c14_dict_delete_iter import test_main.\"\"\"\n\ndef clear_dict_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c14_dict_delete_iter_2.py": "\"\"\"Variant 2: unrelated, but mentions c14_dict_delete_iter import test_main assert test_guard fix.\"\"\"\n\ndef clear_dict_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c14_dict_delete_iter.py": "def clear_dict(d):\n    for k in list(d):\n        del d[k]\n    return d\n"
+      },
+      "expect_pass": [
+        "test_c14_dict_delete_iter.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c14_dict_delete_iter.py::test_guard"
+      ]
+    },
+    {
+      "id": "c15_sort_desc",
+      "task": "fix so it returns items in descending order",
+      "expected_files": [
+        "c15_sort_desc.py"
+      ],
+      "files": {
+        "c15_sort_desc.py": "def sort_desc(xs):\n    return sorted(xs)\n",
+        "test_c15_sort_desc.py": "from c15_sort_desc import sort_desc\n\ndef test_main():\n    assert sort_desc([3, 1, 2]) == [3, 2, 1]\n\ndef test_guard():\n    assert sort_desc([]) == []\n",
+        "distractor_c15_sort_desc_0.py": "\"\"\"Variant 0: unrelated, but mentions def sort_desc return sorted from c15_sort_desc.\"\"\"\n\ndef sort_desc_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c15_sort_desc_1.py": "\"\"\"Variant 1: unrelated, but mentions sorted from c15_sort_desc import test_main assert.\"\"\"\n\ndef sort_desc_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c15_sort_desc_2.py": "\"\"\"Variant 2: unrelated, but mentions import test_main assert test_guard fix returns.\"\"\"\n\ndef sort_desc_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c15_sort_desc.py": "def sort_desc(xs):\n    return sorted(xs, reverse=True)\n"
+      },
+      "expect_pass": [
+        "test_c15_sort_desc.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c15_sort_desc.py::test_guard"
+      ]
+    },
+    {
+      "id": "c16_unique_order",
+      "task": "fix so it preserves first-seen order",
+      "expected_files": [
+        "c16_unique_order.py"
+      ],
+      "files": {
+        "c16_unique_order.py": "def unique(xs):\n    return list(set(xs))\n",
+        "test_c16_unique_order.py": "from c16_unique_order import unique\n\ndef test_main():\n    assert unique([3, 1, 3, 2]) == [3, 1, 2]\n\ndef test_guard():\n    assert unique([]) == []\n",
+        "distractor_c16_unique_order_0.py": "\"\"\"Variant 0: unrelated, but mentions def unique return list set from.\"\"\"\n\ndef unique_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c16_unique_order_1.py": "\"\"\"Variant 1: unrelated, but mentions list set from c16_unique_order import test_main.\"\"\"\n\ndef unique_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c16_unique_order_2.py": "\"\"\"Variant 2: unrelated, but mentions c16_unique_order import test_main assert test_guard fix.\"\"\"\n\ndef unique_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c16_unique_order.py": "def unique(xs):\n    return list(dict.fromkeys(xs))\n"
+      },
+      "expect_pass": [
+        "test_c16_unique_order.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c16_unique_order.py::test_guard"
+      ]
+    },
+    {
+      "id": "c17_flatten_one",
+      "task": "fix so nested lists are flattened one level",
+      "expected_files": [
+        "c17_flatten_one.py"
+      ],
+      "files": {
+        "c17_flatten_one.py": "def flatten(xss):\n    return [x for x in xss]\n",
+        "test_c17_flatten_one.py": "from c17_flatten_one import flatten\n\ndef test_main():\n    assert flatten([[1, 2], [3]]) == [1, 2, 3]\n\ndef test_guard():\n    assert flatten([]) == []\n",
+        "distractor_c17_flatten_one_0.py": "\"\"\"Variant 0: unrelated, but mentions def flatten xss return for from.\"\"\"\n\ndef flatten_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c17_flatten_one_1.py": "\"\"\"Variant 1: unrelated, but mentions return for from c17_flatten_one import test_main.\"\"\"\n\ndef flatten_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c17_flatten_one_2.py": "\"\"\"Variant 2: unrelated, but mentions c17_flatten_one import test_main assert test_guard fix.\"\"\"\n\ndef flatten_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c17_flatten_one.py": "def flatten(xss):\n    return [x for sub in xss for x in sub]\n"
+      },
+      "expect_pass": [
+        "test_c17_flatten_one.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c17_flatten_one.py::test_guard"
+      ]
+    },
+    {
+      "id": "c18_factorial_base",
+      "task": "fix so (0) is 1",
+      "expected_files": [
+        "c18_factorial_base.py"
+      ],
+      "files": {
+        "c18_factorial_base.py": "def factorial(n):\n    if n == 0:\n        return 0\n    return n * factorial(n - 1)\n",
+        "test_c18_factorial_base.py": "from c18_factorial_base import factorial\n\ndef test_main():\n    assert factorial(0) == 1\n",
+        "distractor_c18_factorial_base_0.py": "\"\"\"Variant 0: unrelated, but mentions def factorial return from c18_factorial_base import.\"\"\"\n\ndef factorial_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\n",
+        "distractor_c18_factorial_base_1.py": "\"\"\"Variant 1: unrelated, but mentions from c18_factorial_base import test_main assert fix.\"\"\"\n\ndef factorial_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\n",
+        "distractor_c18_factorial_base_2.py": "\"\"\"Variant 2: unrelated, but mentions test_main assert fix.\"\"\"\n\ndef factorial_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\n"
+      },
+      "fix": {
+        "c18_factorial_base.py": "def factorial(n):\n    if n == 0:\n        return 1\n    return n * factorial(n - 1)\n"
+      },
+      "expect_pass": [
+        "test_c18_factorial_base.py::test_main"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "c19_fib_child",
+      "task": "fix so it recurses on both preceding terms",
+      "expected_files": [
+        "c19_fib_child.py"
+      ],
+      "files": {
+        "c19_fib_child.py": "def fib(n):\n    if n < 2:\n        return n\n    return fib(n - 1) + fib(n - 1)\n",
+        "test_c19_fib_child.py": "from c19_fib_child import fib\n\ndef test_main():\n    assert fib(5) == 5\n\ndef test_guard():\n    assert fib(1) == 1\n",
+        "distractor_c19_fib_child_0.py": "\"\"\"Variant 0: unrelated, but mentions def fib return from c19_fib_child import.\"\"\"\n\ndef fib_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c19_fib_child_1.py": "\"\"\"Variant 1: unrelated, but mentions from c19_fib_child import test_main assert test_guard.\"\"\"\n\ndef fib_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c19_fib_child_2.py": "\"\"\"Variant 2: unrelated, but mentions test_main assert test_guard fix recurses both.\"\"\"\n\ndef fib_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c19_fib_child.py": "def fib(n):\n    if n < 2:\n        return n\n    return fib(n - 1) + fib(n - 2)\n"
+      },
+      "expect_pass": [
+        "test_c19_fib_child.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c19_fib_child.py::test_guard"
+      ]
+    },
+    {
+      "id": "c20_numeric_strings",
+      "task": "fix so numeric strings are added numerically",
+      "expected_files": [
+        "c20_numeric_strings.py"
+      ],
+      "files": {
+        "c20_numeric_strings.py": "def add_strings(a, b):\n    return a + b\n",
+        "test_c20_numeric_strings.py": "from c20_numeric_strings import add_strings\n\ndef test_main():\n    assert add_strings(\"2\", \"3\") == 5\n",
+        "distractor_c20_numeric_strings_0.py": "\"\"\"Variant 0: unrelated, but mentions def add_strings return from c20_numeric_strings import.\"\"\"\n\ndef add_strings_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\n",
+        "distractor_c20_numeric_strings_1.py": "\"\"\"Variant 1: unrelated, but mentions from c20_numeric_strings import test_main assert fix.\"\"\"\n\ndef add_strings_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\n",
+        "distractor_c20_numeric_strings_2.py": "\"\"\"Variant 2: unrelated, but mentions test_main assert fix numeric strings are.\"\"\"\n\ndef add_strings_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\n"
+      },
+      "fix": {
+        "c20_numeric_strings.py": "def add_strings(a, b):\n    return int(a) + int(b)\n"
+      },
+      "expect_pass": [
+        "test_c20_numeric_strings.py::test_main"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "c21_truthiness",
+      "task": "fix so any value counts, not just True",
+      "expected_files": [
+        "c21_truthiness.py"
+      ],
+      "files": {
+        "c21_truthiness.py": "def truthy(x):\n    if x == True:\n        return True\n    return False\n",
+        "test_c21_truthiness.py": "from c21_truthiness import truthy\n\ndef test_main():\n    assert truthy(\"yes\") is True\n\ndef test_guard():\n    assert truthy(0) is False\n",
+        "distractor_c21_truthiness_0.py": "\"\"\"Variant 0: unrelated, but mentions def truthy True return False from.\"\"\"\n\ndef truthy_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c21_truthiness_1.py": "\"\"\"Variant 1: unrelated, but mentions return False from c21_truthiness import test_main.\"\"\"\n\ndef truthy_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c21_truthiness_2.py": "\"\"\"Variant 2: unrelated, but mentions c21_truthiness import test_main assert yes test_guard.\"\"\"\n\ndef truthy_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c21_truthiness.py": "def truthy(x):\n    return bool(x)\n"
+      },
+      "expect_pass": [
+        "test_c21_truthiness.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c21_truthiness.py::test_guard"
+      ]
+    },
+    {
+      "id": "c22_casefold",
+      "task": "fix so German sharp s folds to ss",
+      "expected_files": [
+        "c22_casefold.py"
+      ],
+      "files": {
+        "c22_casefold.py": "def normalize_case(s):\n    return s.lower()\n",
+        "test_c22_casefold.py": "from c22_casefold import normalize_case\n\ndef test_main():\n    assert normalize_case(\"\u00df\") == \"ss\"\n\ndef test_guard():\n    assert normalize_case(\"ABC\") == \"abc\"\n",
+        "distractor_c22_casefold_0.py": "\"\"\"Variant 0: unrelated, but mentions def normalize_case return lower from c22_casefold.\"\"\"\n\ndef normalize_case_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c22_casefold_1.py": "\"\"\"Variant 1: unrelated, but mentions lower from c22_casefold import test_main assert.\"\"\"\n\ndef normalize_case_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c22_casefold_2.py": "\"\"\"Variant 2: unrelated, but mentions import test_main assert test_guard ABC abc.\"\"\"\n\ndef normalize_case_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c22_casefold.py": "def normalize_case(s):\n    return s.casefold()\n"
+      },
+      "expect_pass": [
+        "test_c22_casefold.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c22_casefold.py::test_guard"
+      ]
+    },
+    {
+      "id": "c23_path_absolute_override",
+      "task": "fix so an absolute child cannot escape the base",
+      "expected_files": [
+        "c23_path_absolute_override.py"
+      ],
+      "files": {
+        "c23_path_absolute_override.py": "import os\n\ndef join_under(base, name):\n    return os.path.join(base, name)\n",
+        "test_c23_path_absolute_override.py": "from c23_path_absolute_override import join_under\n\ndef test_main():\n    assert join_under(\"/srv/data\", \"/etc/passwd\") == \"/srv/data/etc/passwd\"\n\ndef test_guard():\n    assert join_under(\"/srv/data\", \"x\") == \"/srv/data/x\"\n",
+        "distractor_c23_path_absolute_override_0.py": "\"\"\"Variant 0: unrelated, but mentions import def join_under base name return.\"\"\"\n\ndef join_under_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c23_path_absolute_override_1.py": "\"\"\"Variant 1: unrelated, but mentions base name return path join from.\"\"\"\n\ndef join_under_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c23_path_absolute_override_2.py": "\"\"\"Variant 2: unrelated, but mentions path join from c23_path_absolute_override test_main assert.\"\"\"\n\ndef join_under_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c23_path_absolute_override.py": "import os\n\ndef join_under(base, name):\n    return os.path.join(base, name.lstrip(\"/\"))\n"
+      },
+      "expect_pass": [
+        "test_c23_path_absolute_override.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c23_path_absolute_override.py::test_guard"
+      ]
+    },
+    {
+      "id": "c24_trailing_slash",
+      "task": "fix so a trailing slash is ignored",
+      "expected_files": [
+        "c24_trailing_slash.py"
+      ],
+      "files": {
+        "c24_trailing_slash.py": "def basename(p):\n    return p.split(\"/\")[-1]\n",
+        "test_c24_trailing_slash.py": "from c24_trailing_slash import basename\n\ndef test_main():\n    assert basename(\"a/b/\") == \"b\"\n\ndef test_guard():\n    assert basename(\"a/b\") == \"b\"\n",
+        "distractor_c24_trailing_slash_0.py": "\"\"\"Variant 0: unrelated, but mentions def basename return split from c24_trailing_slash.\"\"\"\n\ndef basename_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c24_trailing_slash_1.py": "\"\"\"Variant 1: unrelated, but mentions split from c24_trailing_slash import test_main assert.\"\"\"\n\ndef basename_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c24_trailing_slash_2.py": "\"\"\"Variant 2: unrelated, but mentions import test_main assert test_guard fix trailing.\"\"\"\n\ndef basename_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c24_trailing_slash.py": "def basename(p):\n    return p.rstrip(\"/\").split(\"/\")[-1]\n"
+      },
+      "expect_pass": [
+        "test_c24_trailing_slash.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c24_trailing_slash.py::test_guard"
+      ]
+    },
+    {
+      "id": "c25_json_set",
+      "task": "fix so sets are serialisable",
+      "expected_files": [
+        "c25_json_set.py"
+      ],
+      "files": {
+        "c25_json_set.py": "import json\n\ndef to_json(obj):\n    return json.dumps(obj)\n",
+        "test_c25_json_set.py": "import json\nfrom c25_json_set import to_json\n\ndef test_main():\n    assert json.loads(to_json({\"s\": {1}})) == {\"s\": [1]}\n\ndef test_guard():\n    assert json.loads(to_json({\"a\": 1})) == {\"a\": 1}\n",
+        "distractor_c25_json_set_0.py": "\"\"\"Variant 0: unrelated, but mentions import json def to_json obj return.\"\"\"\n\ndef to_json_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c25_json_set_1.py": "\"\"\"Variant 1: unrelated, but mentions to_json obj return dumps from c25_json_set.\"\"\"\n\ndef to_json_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c25_json_set_2.py": "\"\"\"Variant 2: unrelated, but mentions dumps from c25_json_set test_main assert loads.\"\"\"\n\ndef to_json_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c25_json_set.py": "import json\n\ndef to_json(obj):\n    return json.dumps(obj, default=list)\n"
+      },
+      "expect_pass": [
+        "test_c25_json_set.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c25_json_set.py::test_guard"
+      ]
+    },
+    {
+      "id": "c26_alias_copy",
+      "task": "fix so it does not mutate the input list",
+      "expected_files": [
+        "c26_alias_copy.py"
+      ],
+      "files": {
+        "c26_alias_copy.py": "def append_copy(xs, item):\n    out = xs\n    out.append(item)\n    return out\n",
+        "test_c26_alias_copy.py": "from c26_alias_copy import append_copy\n\ndef test_main():\n    xs = [1]\n    assert append_copy(xs, 2) == [1, 2]\n    assert xs == [1]\n\ndef test_guard():\n    assert append_copy([], 1) == [1]\n",
+        "distractor_c26_alias_copy_0.py": "\"\"\"Variant 0: unrelated, but mentions def append_copy item out append return.\"\"\"\n\ndef append_copy_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c26_alias_copy_1.py": "\"\"\"Variant 1: unrelated, but mentions out append return from c26_alias_copy import.\"\"\"\n\ndef append_copy_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c26_alias_copy_2.py": "\"\"\"Variant 2: unrelated, but mentions from c26_alias_copy import test_main assert test_guard.\"\"\"\n\ndef append_copy_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c26_alias_copy.py": "def append_copy(xs, item):\n    out = list(xs)\n    out.append(item)\n    return out\n"
+      },
+      "expect_pass": [
+        "test_c26_alias_copy.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c26_alias_copy.py::test_guard"
+      ]
+    },
+    {
+      "id": "c27_generator_exhaust",
+      "task": "fix so a generator can be summed twice",
+      "expected_files": [
+        "c27_generator_exhaust.py"
+      ],
+      "files": {
+        "c27_generator_exhaust.py": "def twice_sum(items):\n    return sum(items) + sum(items)\n",
+        "test_c27_generator_exhaust.py": "from c27_generator_exhaust import twice_sum\n\ndef test_main():\n    assert twice_sum(iter([1, 2])) == 6\n\ndef test_guard():\n    assert twice_sum([1]) == 2\n",
+        "distractor_c27_generator_exhaust_0.py": "\"\"\"Variant 0: unrelated, but mentions def twice_sum items return sum from.\"\"\"\n\ndef twice_sum_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c27_generator_exhaust_1.py": "\"\"\"Variant 1: unrelated, but mentions return sum from c27_generator_exhaust import test_main.\"\"\"\n\ndef twice_sum_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c27_generator_exhaust_2.py": "\"\"\"Variant 2: unrelated, but mentions c27_generator_exhaust import test_main assert iter test_guard.\"\"\"\n\ndef twice_sum_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c27_generator_exhaust.py": "def twice_sum(items):\n    vals = list(items)\n    return sum(vals) + sum(vals)\n"
+      },
+      "expect_pass": [
+        "test_c27_generator_exhaust.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c27_generator_exhaust.py::test_guard"
+      ]
+    },
+    {
+      "id": "c28_enumerate_start",
+      "task": "fix so numbering starts at one",
+      "expected_files": [
+        "c28_enumerate_start.py"
+      ],
+      "files": {
+        "c28_enumerate_start.py": "def label_items(items):\n    return [(i, x) for i, x in enumerate(items)]\n",
+        "test_c28_enumerate_start.py": "from c28_enumerate_start import label_items\n\ndef test_main():\n    assert label_items([\"a\"]) == [(1, \"a\")]\n\ndef test_guard():\n    assert label_items([]) == []\n",
+        "distractor_c28_enumerate_start_0.py": "\"\"\"Variant 0: unrelated, but mentions def label_items items return for enumerate.\"\"\"\n\ndef label_items_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c28_enumerate_start_1.py": "\"\"\"Variant 1: unrelated, but mentions return for enumerate from c28_enumerate_start import.\"\"\"\n\ndef label_items_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c28_enumerate_start_2.py": "\"\"\"Variant 2: unrelated, but mentions from c28_enumerate_start import test_main assert test_guard.\"\"\"\n\ndef label_items_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c28_enumerate_start.py": "def label_items(items):\n    return [(i, x) for i, x in enumerate(items, 1)]\n"
+      },
+      "expect_pass": [
+        "test_c28_enumerate_start.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c28_enumerate_start.py::test_guard"
+      ]
+    },
+    {
+      "id": "c29_zip_pad",
+      "task": "fix so unequal lengths are padded with zero",
+      "expected_files": [
+        "c29_zip_pad.py"
+      ],
+      "files": {
+        "c29_zip_pad.py": "def zip_pad(a, b):\n    return list(zip(a, b))\n",
+        "test_c29_zip_pad.py": "from c29_zip_pad import zip_pad\n\ndef test_main():\n    assert zip_pad([1, 2], [3]) == [(1, 3), (2, 0)]\n\ndef test_guard():\n    assert zip_pad([], []) == []\n",
+        "distractor_c29_zip_pad_0.py": "\"\"\"Variant 0: unrelated, but mentions def zip_pad return list zip from.\"\"\"\n\ndef zip_pad_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c29_zip_pad_1.py": "\"\"\"Variant 1: unrelated, but mentions list zip from c29_zip_pad import test_main.\"\"\"\n\ndef zip_pad_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c29_zip_pad_2.py": "\"\"\"Variant 2: unrelated, but mentions c29_zip_pad import test_main assert test_guard fix.\"\"\"\n\ndef zip_pad_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c29_zip_pad.py": "from itertools import zip_longest\n\ndef zip_pad(a, b):\n    return list(zip_longest(a, b, fillvalue=0))\n"
+      },
+      "expect_pass": [
+        "test_c29_zip_pad.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c29_zip_pad.py::test_guard"
+      ]
+    },
+    {
+      "id": "c30_all_empty",
+      "task": "fix so an empty list is not reported as all positive",
+      "expected_files": [
+        "c30_all_empty.py"
+      ],
+      "files": {
+        "c30_all_empty.py": "def all_positive(xs):\n    return all(x > 0 for x in xs)\n",
+        "test_c30_all_empty.py": "from c30_all_empty import all_positive\n\ndef test_main():\n    assert all_positive([]) is False\n\ndef test_guard():\n    assert all_positive([1, 2]) is True\n",
+        "distractor_c30_all_empty_0.py": "\"\"\"Variant 0: unrelated, but mentions def all_positive return all for from.\"\"\"\n\ndef all_positive_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c30_all_empty_1.py": "\"\"\"Variant 1: unrelated, but mentions all for from c30_all_empty import test_main.\"\"\"\n\ndef all_positive_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c30_all_empty_2.py": "\"\"\"Variant 2: unrelated, but mentions c30_all_empty import test_main assert False test_guard.\"\"\"\n\ndef all_positive_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c30_all_empty.py": "def all_positive(xs):\n    return bool(xs) and all(x > 0 for x in xs)\n"
+      },
+      "expect_pass": [
+        "test_c30_all_empty.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c30_all_empty.py::test_guard"
+      ]
+    },
+    {
+      "id": "c31_max_empty",
+      "task": "fix so an empty list returns None",
+      "expected_files": [
+        "c31_max_empty.py"
+      ],
+      "files": {
+        "c31_max_empty.py": "def max_or_none(xs):\n    return max(xs)\n",
+        "test_c31_max_empty.py": "from c31_max_empty import max_or_none\n\ndef test_main():\n    assert max_or_none([]) is None\n\ndef test_guard():\n    assert max_or_none([1, 3, 2]) == 3\n",
+        "distractor_c31_max_empty_0.py": "\"\"\"Variant 0: unrelated, but mentions def max_or_none return max from c31_max_empty.\"\"\"\n\ndef max_or_none_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c31_max_empty_1.py": "\"\"\"Variant 1: unrelated, but mentions max from c31_max_empty import test_main assert.\"\"\"\n\ndef max_or_none_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c31_max_empty_2.py": "\"\"\"Variant 2: unrelated, but mentions import test_main assert None test_guard fix.\"\"\"\n\ndef max_or_none_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c31_max_empty.py": "def max_or_none(xs):\n    return max(xs, default=None)\n"
+      },
+      "expect_pass": [
+        "test_c31_max_empty.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c31_max_empty.py::test_guard"
+      ]
+    },
+    {
+      "id": "c32_int_from_float_str",
+      "task": "fix so a float string is truncated toward zero",
+      "expected_files": [
+        "c32_int_from_float_str.py"
+      ],
+      "files": {
+        "c32_int_from_float_str.py": "def to_int(s):\n    return int(s)\n",
+        "test_c32_int_from_float_str.py": "from c32_int_from_float_str import to_int\n\ndef test_main():\n    assert to_int(\"4.2\") == 4\n\ndef test_guard():\n    assert to_int(\"7\") == 7\n",
+        "distractor_c32_int_from_float_str_0.py": "\"\"\"Variant 0: unrelated, but mentions def to_int return int from c32_int_from_float_str.\"\"\"\n\ndef to_int_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c32_int_from_float_str_1.py": "\"\"\"Variant 1: unrelated, but mentions int from c32_int_from_float_str import test_main assert.\"\"\"\n\ndef to_int_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c32_int_from_float_str_2.py": "\"\"\"Variant 2: unrelated, but mentions import test_main assert test_guard fix float.\"\"\"\n\ndef to_int_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c32_int_from_float_str.py": "def to_int(s):\n    return int(float(s))\n"
+      },
+      "expect_pass": [
+        "test_c32_int_from_float_str.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c32_int_from_float_str.py::test_guard"
+      ]
+    },
+    {
+      "id": "c33_endswith_suffix",
+      "task": "fix so it tests the suffix, not the prefix",
+      "expected_files": [
+        "c33_endswith_suffix.py"
+      ],
+      "files": {
+        "c33_endswith_suffix.py": "def ends_with(s, suffix):\n    return s[:len(suffix)] == suffix\n",
+        "test_c33_endswith_suffix.py": "from c33_endswith_suffix import ends_with\n\ndef test_main():\n    assert ends_with(\"sing\", \"ing\") is True\n    assert ends_with(\"ings\", \"ing\") is False\n\ndef test_guard():\n    assert ends_with(\"x\", \"y\") is False\n",
+        "distractor_c33_endswith_suffix_0.py": "\"\"\"Variant 0: unrelated, but mentions def ends_with suffix return len from.\"\"\"\n\ndef ends_with_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c33_endswith_suffix_1.py": "\"\"\"Variant 1: unrelated, but mentions return len from c33_endswith_suffix import test_main.\"\"\"\n\ndef ends_with_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c33_endswith_suffix_2.py": "\"\"\"Variant 2: unrelated, but mentions c33_endswith_suffix import test_main assert sing ing.\"\"\"\n\ndef ends_with_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c33_endswith_suffix.py": "def ends_with(s, suffix):\n    return s.endswith(suffix)\n"
+      },
+      "expect_pass": [
+        "test_c33_endswith_suffix.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c33_endswith_suffix.py::test_guard"
+      ]
+    },
+    {
+      "id": "c34_replace_all",
+      "task": "fix so every occurrence is replaced",
+      "expected_files": [
+        "c34_replace_all.py"
+      ],
+      "files": {
+        "c34_replace_all.py": "def replace_all(s, old, new):\n    return s.replace(old, new, 1)\n",
+        "test_c34_replace_all.py": "from c34_replace_all import replace_all\n\ndef test_main():\n    assert replace_all(\"aaa\", \"a\", \"b\") == \"bbb\"\n\ndef test_guard():\n    assert replace_all(\"abc\", \"x\", \"y\") == \"abc\"\n",
+        "distractor_c34_replace_all_0.py": "\"\"\"Variant 0: unrelated, but mentions def replace_all old new return replace.\"\"\"\n\ndef replace_all_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c34_replace_all_1.py": "\"\"\"Variant 1: unrelated, but mentions new return replace from c34_replace_all import.\"\"\"\n\ndef replace_all_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c34_replace_all_2.py": "\"\"\"Variant 2: unrelated, but mentions from c34_replace_all import test_main assert aaa.\"\"\"\n\ndef replace_all_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c34_replace_all.py": "def replace_all(s, old, new):\n    return s.replace(old, new)\n"
+      },
+      "expect_pass": [
+        "test_c34_replace_all.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c34_replace_all.py::test_guard"
+      ]
+    },
+    {
+      "id": "c35_count_overlap",
+      "task": "fix so overlapping occurrences are counted",
+      "expected_files": [
+        "c35_count_overlap.py"
+      ],
+      "files": {
+        "c35_count_overlap.py": "def count_overlap(s, sub):\n    return s.count(sub)\n",
+        "test_c35_count_overlap.py": "from c35_count_overlap import count_overlap\n\ndef test_main():\n    assert count_overlap(\"aaa\", \"aa\") == 2\n\ndef test_guard():\n    assert count_overlap(\"abc\", \"x\") == 0\n",
+        "distractor_c35_count_overlap_0.py": "\"\"\"Variant 0: unrelated, but mentions def count_overlap sub return count from.\"\"\"\n\ndef count_overlap_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c35_count_overlap_1.py": "\"\"\"Variant 1: unrelated, but mentions return count from c35_count_overlap import test_main.\"\"\"\n\ndef count_overlap_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c35_count_overlap_2.py": "\"\"\"Variant 2: unrelated, but mentions c35_count_overlap import test_main assert aaa test_guard.\"\"\"\n\ndef count_overlap_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c35_count_overlap.py": "def count_overlap(s, sub):\n    n = 0\n    for i in range(len(s) - len(sub) + 1):\n        if s[i:i + len(sub)] == sub:\n            n += 1\n    return n\n"
+      },
+      "expect_pass": [
+        "test_c35_count_overlap.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c35_count_overlap.py::test_guard"
+      ]
+    },
+    {
+      "id": "c36_title_words",
+      "task": "fix so every word is capitalised",
+      "expected_files": [
+        "c36_title_words.py"
+      ],
+      "files": {
+        "c36_title_words.py": "def title_words(s):\n    return s.capitalize()\n",
+        "test_c36_title_words.py": "from c36_title_words import title_words\n\ndef test_main():\n    assert title_words(\"hello world\") == \"Hello World\"\n\ndef test_guard():\n    assert title_words(\"x\") == \"X\"\n",
+        "distractor_c36_title_words_0.py": "\"\"\"Variant 0: unrelated, but mentions def title_words return capitalize from c36_title_words.\"\"\"\n\ndef title_words_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c36_title_words_1.py": "\"\"\"Variant 1: unrelated, but mentions capitalize from c36_title_words import test_main assert.\"\"\"\n\ndef title_words_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c36_title_words_2.py": "\"\"\"Variant 2: unrelated, but mentions import test_main assert hello world Hello.\"\"\"\n\ndef title_words_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c36_title_words.py": "def title_words(s):\n    return s.title()\n"
+      },
+      "expect_pass": [
+        "test_c36_title_words.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c36_title_words.py::test_guard"
+      ]
+    },
+    {
+      "id": "c37_year_4digit",
+      "task": "fix so it formats four digits",
+      "expected_files": [
+        "c37_year_4digit.py"
+      ],
+      "files": {
+        "c37_year_4digit.py": "import datetime\n\ndef year(d):\n    return d.strftime(\"%y\")\n",
+        "test_c37_year_4digit.py": "import datetime\nfrom c37_year_4digit import year\n\ndef test_main():\n    assert year(datetime.date(2024, 1, 1)) == \"2024\"\n",
+        "distractor_c37_year_4digit_0.py": "\"\"\"Variant 0: unrelated, but mentions import datetime def year return strftime.\"\"\"\n\ndef year_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\n",
+        "distractor_c37_year_4digit_1.py": "\"\"\"Variant 1: unrelated, but mentions year return strftime from c37_year_4digit test_main.\"\"\"\n\ndef year_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\n",
+        "distractor_c37_year_4digit_2.py": "\"\"\"Variant 2: unrelated, but mentions from c37_year_4digit test_main assert date fix.\"\"\"\n\ndef year_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\n"
+      },
+      "fix": {
+        "c37_year_4digit.py": "import datetime\n\ndef year(d):\n    return d.strftime(\"%Y\")\n"
+      },
+      "expect_pass": [
+        "test_c37_year_4digit.py::test_main"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "c38_timedelta_days",
+      "task": "fix so multi-day spans report the day count",
+      "expected_files": [
+        "c38_timedelta_days.py"
+      ],
+      "files": {
+        "c38_timedelta_days.py": "import datetime\n\ndef days_span(td):\n    return td.seconds // 86400\n",
+        "test_c38_timedelta_days.py": "import datetime\nfrom c38_timedelta_days import days_span\n\ndef test_main():\n    assert days_span(datetime.timedelta(days=2)) == 2\n\ndef test_guard():\n    assert days_span(datetime.timedelta(days=0)) == 0\n",
+        "distractor_c38_timedelta_days_0.py": "\"\"\"Variant 0: unrelated, but mentions import datetime def days_span return seconds.\"\"\"\n\ndef days_span_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c38_timedelta_days_1.py": "\"\"\"Variant 1: unrelated, but mentions days_span return seconds from c38_timedelta_days test_main.\"\"\"\n\ndef days_span_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c38_timedelta_days_2.py": "\"\"\"Variant 2: unrelated, but mentions from c38_timedelta_days test_main assert timedelta days.\"\"\"\n\ndef days_span_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c38_timedelta_days.py": "import datetime\n\ndef days_span(td):\n    return td.days\n"
+      },
+      "expect_pass": [
+        "test_c38_timedelta_days.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c38_timedelta_days.py::test_guard"
+      ]
+    },
+    {
+      "id": "c39_clamp_args",
+      "task": "fix so it bounds a value between lo and hi",
+      "expected_files": [
+        "c39_clamp_args.py"
+      ],
+      "files": {
+        "c39_clamp_args.py": "def clamp(v, lo, hi):\n    return min(lo, max(hi, v))\n",
+        "test_c39_clamp_args.py": "from c39_clamp_args import clamp\n\ndef test_main():\n    assert clamp(5, 0, 3) == 3\n\ndef test_guard():\n    assert clamp(-1, 0, 3) == 0\n",
+        "distractor_c39_clamp_args_0.py": "\"\"\"Variant 0: unrelated, but mentions def clamp return min max from.\"\"\"\n\ndef clamp_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c39_clamp_args_1.py": "\"\"\"Variant 1: unrelated, but mentions min max from c39_clamp_args import test_main.\"\"\"\n\ndef clamp_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c39_clamp_args_2.py": "\"\"\"Variant 2: unrelated, but mentions c39_clamp_args import test_main assert test_guard fix.\"\"\"\n\ndef clamp_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c39_clamp_args.py": "def clamp(v, lo, hi):\n    return min(hi, max(lo, v))\n"
+      },
+      "expect_pass": [
+        "test_c39_clamp_args.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c39_clamp_args.py::test_guard"
+      ]
+    },
+    {
+      "id": "c40_chunk_last",
+      "task": "fix so the final partial is included",
+      "expected_files": [
+        "c40_chunk_last.py"
+      ],
+      "files": {
+        "c40_chunk_last.py": "def chunk(xs, n):\n    return [xs[i:i + n] for i in range(0, len(xs) - n + 1, n)]\n",
+        "test_c40_chunk_last.py": "from c40_chunk_last import chunk\n\ndef test_main():\n    assert chunk([1, 2, 3], 2) == [[1, 2], [3]]\n\ndef test_guard():\n    assert chunk([], 2) == []\n",
+        "distractor_c40_chunk_last_0.py": "\"\"\"Variant 0: unrelated, but mentions def chunk return for range len.\"\"\"\n\ndef chunk_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c40_chunk_last_1.py": "\"\"\"Variant 1: unrelated, but mentions for range len from c40_chunk_last import.\"\"\"\n\ndef chunk_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c40_chunk_last_2.py": "\"\"\"Variant 2: unrelated, but mentions from c40_chunk_last import test_main assert test_guard.\"\"\"\n\ndef chunk_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c40_chunk_last.py": "def chunk(xs, n):\n    return [xs[i:i + n] for i in range(0, len(xs), n)]\n"
+      },
+      "expect_pass": [
+        "test_c40_chunk_last.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c40_chunk_last.py::test_guard"
+      ]
+    },
+    {
+      "id": "c41_dedupe_adjacent",
+      "task": "fix so only consecutive duplicates are removed",
+      "expected_files": [
+        "c41_dedupe_adjacent.py"
+      ],
+      "files": {
+        "c41_dedupe_adjacent.py": "def dedupe_adjacent(xs):\n    return list(set(xs))\n",
+        "test_c41_dedupe_adjacent.py": "from c41_dedupe_adjacent import dedupe_adjacent\n\ndef test_main():\n    assert dedupe_adjacent([1, 1, 2, 1]) == [1, 2, 1]\n\ndef test_guard():\n    assert dedupe_adjacent([]) == []\n",
+        "distractor_c41_dedupe_adjacent_0.py": "\"\"\"Variant 0: unrelated, but mentions def dedupe_adjacent return list set from.\"\"\"\n\ndef dedupe_adjacent_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c41_dedupe_adjacent_1.py": "\"\"\"Variant 1: unrelated, but mentions list set from c41_dedupe_adjacent import test_main.\"\"\"\n\ndef dedupe_adjacent_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c41_dedupe_adjacent_2.py": "\"\"\"Variant 2: unrelated, but mentions c41_dedupe_adjacent import test_main assert test_guard fix.\"\"\"\n\ndef dedupe_adjacent_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c41_dedupe_adjacent.py": "from itertools import groupby\n\ndef dedupe_adjacent(xs):\n    return [x for x, _ in groupby(xs)]\n"
+      },
+      "expect_pass": [
+        "test_c41_dedupe_adjacent.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c41_dedupe_adjacent.py::test_guard"
+      ]
+    },
+    {
+      "id": "c42_merge_no_mutate",
+      "task": "fix so neither input dict is modified",
+      "expected_files": [
+        "c42_merge_no_mutate.py"
+      ],
+      "files": {
+        "c42_merge_no_mutate.py": "def merge(a, b):\n    a.update(b)\n    return a\n",
+        "test_c42_merge_no_mutate.py": "from c42_merge_no_mutate import merge\n\ndef test_main():\n    a = {\"x\": 1}\n    assert merge(a, {\"y\": 2}) == {\"x\": 1, \"y\": 2}\n    assert a == {\"x\": 1}\n\ndef test_guard():\n    assert merge({}, {}) == {}\n",
+        "distractor_c42_merge_no_mutate_0.py": "\"\"\"Variant 0: unrelated, but mentions def merge update return from c42_merge_no_mutate.\"\"\"\n\ndef merge_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c42_merge_no_mutate_1.py": "\"\"\"Variant 1: unrelated, but mentions return from c42_merge_no_mutate import test_main assert.\"\"\"\n\ndef merge_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c42_merge_no_mutate_2.py": "\"\"\"Variant 2: unrelated, but mentions import test_main assert test_guard fix neither.\"\"\"\n\ndef merge_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c42_merge_no_mutate.py": "def merge(a, b):\n    return {**a, **b}\n"
+      },
+      "expect_pass": [
+        "test_c42_merge_no_mutate.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c42_merge_no_mutate.py::test_guard"
+      ]
+    },
+    {
+      "id": "c43_counter_key",
+      "task": "fix so counting an unseen key starts from zero",
+      "expected_files": [
+        "c43_counter_key.py"
+      ],
+      "files": {
+        "c43_counter_key.py": "def bump(d, k):\n    d[k] += 1\n    return d\n",
+        "test_c43_counter_key.py": "from c43_counter_key import bump\n\ndef test_main():\n    assert bump({}, \"x\") == {\"x\": 1}\n\ndef test_guard():\n    assert bump({\"x\": 2}, \"x\") == {\"x\": 3}\n",
+        "distractor_c43_counter_key_0.py": "\"\"\"Variant 0: unrelated, but mentions def bump return from c43_counter_key import.\"\"\"\n\ndef bump_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c43_counter_key_1.py": "\"\"\"Variant 1: unrelated, but mentions from c43_counter_key import test_main assert test_guard.\"\"\"\n\ndef bump_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c43_counter_key_2.py": "\"\"\"Variant 2: unrelated, but mentions test_main assert test_guard fix counting unseen.\"\"\"\n\ndef bump_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c43_counter_key.py": "def bump(d, k):\n    d[k] = d.get(k, 0) + 1\n    return d\n"
+      },
+      "expect_pass": [
+        "test_c43_counter_key.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c43_counter_key.py::test_guard"
+      ]
+    },
+    {
+      "id": "c44_exception_reraise",
+      "task": "fix so a bad value raises instead of being swallowed",
+      "expected_files": [
+        "c44_exception_reraise.py"
+      ],
+      "files": {
+        "c44_exception_reraise.py": "def parse(s):\n    try:\n        return int(s)\n    except ValueError:\n        return None\n",
+        "test_c44_exception_reraise.py": "import pytest\nfrom c44_exception_reraise import parse\n\ndef test_main():\n    with pytest.raises(ValueError):\n        parse(\"nope\")\n\ndef test_guard():\n    assert parse(\"4\") == 4\n",
+        "distractor_c44_exception_reraise_0.py": "\"\"\"Variant 0: unrelated, but mentions def parse try return int except.\"\"\"\n\ndef parse_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c44_exception_reraise_1.py": "\"\"\"Variant 1: unrelated, but mentions return int except ValueError None import.\"\"\"\n\ndef parse_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c44_exception_reraise_2.py": "\"\"\"Variant 2: unrelated, but mentions ValueError None import pytest from c44_exception_reraise.\"\"\"\n\ndef parse_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c44_exception_reraise.py": "def parse(s):\n    return int(s)\n"
+      },
+      "expect_pass": [
+        "test_c44_exception_reraise.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c44_exception_reraise.py::test_guard"
+      ]
+    },
+    {
+      "id": "c45_finally_return",
+      "task": "fix so a finally block does not override the return",
+      "expected_files": [
+        "c45_finally_return.py"
+      ],
+      "files": {
+        "c45_finally_return.py": "def value():\n    try:\n        return 1\n    finally:\n        return 2\n",
+        "test_c45_finally_return.py": "from c45_finally_return import value\n\ndef test_main():\n    assert value() == 1\n",
+        "distractor_c45_finally_return_0.py": "\"\"\"Variant 0: unrelated, but mentions def value try return finally from.\"\"\"\n\ndef value_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\n",
+        "distractor_c45_finally_return_1.py": "\"\"\"Variant 1: unrelated, but mentions return finally from c45_finally_return import test_main.\"\"\"\n\ndef value_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\n",
+        "distractor_c45_finally_return_2.py": "\"\"\"Variant 2: unrelated, but mentions c45_finally_return import test_main assert fix block.\"\"\"\n\ndef value_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\n"
+      },
+      "fix": {
+        "c45_finally_return.py": "def value():\n    try:\n        return 1\n    finally:\n        pass\n"
+      },
+      "expect_pass": [
+        "test_c45_finally_return.py::test_main"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "c46_is_compare",
+      "task": "fix so equal strings compare equal, not by identity",
+      "expected_files": [
+        "c46_is_compare.py"
+      ],
+      "files": {
+        "c46_is_compare.py": "def same_text(a, b):\n    return a is b\n",
+        "test_c46_is_compare.py": "from c46_is_compare import same_text\n\ndef test_main():\n    assert same_text(\"\".join([\"a\", \"b\"]), \"ab\") is True\n\ndef test_guard():\n    assert same_text(\"a\", \"b\") is False\n",
+        "distractor_c46_is_compare_0.py": "\"\"\"Variant 0: unrelated, but mentions def same_text return from c46_is_compare import.\"\"\"\n\ndef same_text_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c46_is_compare_1.py": "\"\"\"Variant 1: unrelated, but mentions from c46_is_compare import test_main assert join.\"\"\"\n\ndef same_text_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c46_is_compare_2.py": "\"\"\"Variant 2: unrelated, but mentions test_main assert join True test_guard False.\"\"\"\n\ndef same_text_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c46_is_compare.py": "def same_text(a, b):\n    return a == b\n"
+      },
+      "expect_pass": [
+        "test_c46_is_compare.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c46_is_compare.py::test_guard"
+      ]
+    },
+    {
+      "id": "c47_negative_index",
+      "task": "fix so it returns the final element",
+      "expected_files": [
+        "c47_negative_index.py"
+      ],
+      "files": {
+        "c47_negative_index.py": "def last(xs):\n    return xs[len(xs)]\n",
+        "test_c47_negative_index.py": "from c47_negative_index import last\n\ndef test_main():\n    assert last([1, 2, 3]) == 3\n",
+        "distractor_c47_negative_index_0.py": "\"\"\"Variant 0: unrelated, but mentions def last return len from c47_negative_index.\"\"\"\n\ndef last_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\n",
+        "distractor_c47_negative_index_1.py": "\"\"\"Variant 1: unrelated, but mentions len from c47_negative_index import test_main assert.\"\"\"\n\ndef last_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\n",
+        "distractor_c47_negative_index_2.py": "\"\"\"Variant 2: unrelated, but mentions import test_main assert fix returns the.\"\"\"\n\ndef last_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\n"
+      },
+      "fix": {
+        "c47_negative_index.py": "def last(xs):\n    return xs[len(xs) - 1]\n"
+      },
+      "expect_pass": [
+        "test_c47_negative_index.py::test_main"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "c48_string_reverse",
+      "task": "fix so it reverses the whole string",
+      "expected_files": [
+        "c48_string_reverse.py"
+      ],
+      "files": {
+        "c48_string_reverse.py": "def reverse(s):\n    return s[::-2]\n",
+        "test_c48_string_reverse.py": "from c48_string_reverse import reverse\n\ndef test_main():\n    assert reverse(\"abcd\") == \"dcba\"\n\ndef test_guard():\n    assert reverse(\"\") == \"\"\n",
+        "distractor_c48_string_reverse_0.py": "\"\"\"Variant 0: unrelated, but mentions def reverse return from c48_string_reverse import.\"\"\"\n\ndef reverse_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c48_string_reverse_1.py": "\"\"\"Variant 1: unrelated, but mentions from c48_string_reverse import test_main assert abcd.\"\"\"\n\ndef reverse_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c48_string_reverse_2.py": "\"\"\"Variant 2: unrelated, but mentions test_main assert abcd dcba test_guard fix.\"\"\"\n\ndef reverse_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c48_string_reverse.py": "def reverse(s):\n    return s[::-1]\n"
+      },
+      "expect_pass": [
+        "test_c48_string_reverse.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c48_string_reverse.py::test_guard"
+      ]
+    },
+    {
+      "id": "c49_sorted_key_int",
+      "task": "fix so numbers are compared numerically",
+      "expected_files": [
+        "c49_sorted_key_int.py"
+      ],
+      "files": {
+        "c49_sorted_key_int.py": "def sort_numbers(xs):\n    return sorted(xs, key=str)\n",
+        "test_c49_sorted_key_int.py": "from c49_sorted_key_int import sort_numbers\n\ndef test_main():\n    assert sort_numbers([\"10\", \"2\"]) == [\"2\", \"10\"]\n\ndef test_guard():\n    assert sort_numbers([]) == []\n",
+        "distractor_c49_sorted_key_int_0.py": "\"\"\"Variant 0: unrelated, but mentions def sort_numbers return sorted key str.\"\"\"\n\ndef sort_numbers_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_guard_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_c49_sorted_key_int_1.py": "\"\"\"Variant 1: unrelated, but mentions sorted key str from c49_sorted_key_int import.\"\"\"\n\ndef sort_numbers_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_guard_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_c49_sorted_key_int_2.py": "\"\"\"Variant 2: unrelated, but mentions from c49_sorted_key_int import test_main assert test_guard.\"\"\"\n\ndef sort_numbers_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_guard_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "c49_sorted_key_int.py": "def sort_numbers(xs):\n    return sorted(xs, key=int)\n"
+      },
+      "expect_pass": [
+        "test_c49_sorted_key_int.py::test_main"
+      ],
+      "must_keep_passing": [
+        "test_c49_sorted_key_int.py::test_guard"
+      ]
+    },
+    {
+      "id": "c50_percentage_calc",
+      "task": "fix so a part of a total is scaled to 100",
+      "expected_files": [
+        "c50_percentage_calc.py"
+      ],
+      "files": {
+        "c50_percentage_calc.py": "def percent(part, total):\n    return part / total\n",
+        "test_c50_percentage_calc.py": "from c50_percentage_calc import percent\n\ndef test_main():\n    assert percent(1, 4) == 25.0\n",
+        "distractor_c50_percentage_calc_0.py": "\"\"\"Variant 0: unrelated, but mentions def percent part total return from.\"\"\"\n\ndef percent_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 1\n\n",
+        "distractor_c50_percentage_calc_1.py": "\"\"\"Variant 1: unrelated, but mentions total return from c50_percentage_calc import test_main.\"\"\"\n\ndef percent_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 1\n\n",
+        "distractor_c50_percentage_calc_2.py": "\"\"\"Variant 2: unrelated, but mentions c50_percentage_calc import test_main assert fix scaled.\"\"\"\n\ndef percent_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 1\n\n"
+      },
+      "fix": {
+        "c50_percentage_calc.py": "def percent(part, total):\n    return part / total * 100\n"
+      },
+      "expect_pass": [
+        "test_c50_percentage_calc.py::test_main"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "m01_rename_total",
+      "task": "fix the off-by-one in , rename it to sum_prices in , and update the caller",
+      "expected_files": [
+        "m01_core.py",
+        "m01_cart.py"
+      ],
+      "files": {
+        "m01_core.py": "def total(prices):\n    return sum(prices) - 1\n",
+        "m01_cart.py": "from m01_core import total\n\ndef checkout(prices):\n    return total(prices)\n",
+        "test_m01.py": "from m01_core import sum_prices\nfrom m01_cart import checkout\n\ndef test_main():\n    assert sum_prices([2, 3]) == 5\n    assert checkout([2, 3]) == 5\n",
+        "distractor_m01_rename_total_0.py": "\"\"\"Variant 0: unrelated, but mentions def total prices return sum from.\"\"\"\n\ndef total_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef checkout_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_m01_rename_total_1.py": "\"\"\"Variant 1: unrelated, but mentions return sum from m01_core import checkout.\"\"\"\n\ndef total_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef checkout_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_m01_rename_total_2.py": "\"\"\"Variant 2: unrelated, but mentions m01_core import checkout sum_prices m01_cart test_main.\"\"\"\n\ndef total_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef checkout_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "m01_core.py": "def sum_prices(prices):\n    return sum(prices)\n",
+        "m01_cart.py": "from m01_core import sum_prices\n\ndef checkout(prices):\n    return sum_prices(prices)\n"
+      },
+      "expect_pass": [
+        "test_m01.py::test_main"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "m02_suffix_param",
+      "task": "add a suffix parameter to in and pass it from",
+      "expected_files": [
+        "m02_fmt.py",
+        "m02_invoice.py"
+      ],
+      "files": {
+        "m02_fmt.py": "def money(value):\n    return f\"{value:.2f}\"\n",
+        "m02_invoice.py": "from m02_fmt import money\n\ndef line(value):\n    return money(value)\n",
+        "test_m02.py": "from m02_invoice import line\n\ndef test_main():\n    assert line(2) == \"2.00 USD\"\n",
+        "distractor_m02_suffix_param_0.py": "\"\"\"Variant 0: unrelated, but mentions def money value return from m02_fmt.\"\"\"\n\ndef money_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef line_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_m02_suffix_param_1.py": "\"\"\"Variant 1: unrelated, but mentions return from m02_fmt import line m02_invoice.\"\"\"\n\ndef money_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef line_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_m02_suffix_param_2.py": "\"\"\"Variant 2: unrelated, but mentions import line m02_invoice test_main assert USD.\"\"\"\n\ndef money_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef line_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "m02_fmt.py": "def money(value, suffix=\"\"):\n    return f\"{value:.2f}{suffix}\"\n",
+        "m02_invoice.py": "from m02_fmt import money\n\ndef line(value):\n    return money(value, \" USD\")\n"
+      },
+      "expect_pass": [
+        "test_m02.py::test_main"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "m03_rename_area",
+      "task": "fix the multiply in , rename it to rect_area in , and update",
+      "expected_files": [
+        "m03_geom.py",
+        "m03_shapes.py"
+      ],
+      "files": {
+        "m03_geom.py": "def area(w, h):\n    return w + h\n",
+        "m03_shapes.py": "from m03_geom import area\n\ndef square_area(side):\n    return area(side, side)\n",
+        "test_m03.py": "from m03_geom import rect_area\nfrom m03_shapes import square_area\n\ndef test_main():\n    assert rect_area(2, 3) == 6\n    assert square_area(3) == 9\n",
+        "distractor_m03_rename_area_0.py": "\"\"\"Variant 0: unrelated, but mentions def area return from m03_geom import.\"\"\"\n\ndef area_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef square_area_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_m03_rename_area_1.py": "\"\"\"Variant 1: unrelated, but mentions from m03_geom import square_area side rect_area.\"\"\"\n\ndef area_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef square_area_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_m03_rename_area_2.py": "\"\"\"Variant 2: unrelated, but mentions square_area side rect_area m03_shapes test_main assert.\"\"\"\n\ndef area_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef square_area_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "m03_geom.py": "def rect_area(w, h):\n    return w * h\n",
+        "m03_shapes.py": "from m03_geom import rect_area\n\ndef square_area(side):\n    return rect_area(side, side)\n"
+      },
+      "expect_pass": [
+        "test_m03.py::test_main"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "m04_strict_param",
+      "task": "make reject non-identifiers via a strict flag in and use it from",
+      "expected_files": [
+        "m04_validate.py",
+        "m04_form.py"
+      ],
+      "files": {
+        "m04_validate.py": "def is_name(value):\n    return bool(value)\n",
+        "m04_form.py": "from m04_validate import is_name\n\ndef field(value):\n    return is_name(value)\n",
+        "test_m04.py": "from m04_form import field\n\ndef test_main():\n    assert field(\"1bad\") is False\n    assert field(\"good\") is True\n",
+        "distractor_m04_strict_param_0.py": "\"\"\"Variant 0: unrelated, but mentions def is_name value return bool from.\"\"\"\n\ndef is_name_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef field_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_m04_strict_param_1.py": "\"\"\"Variant 1: unrelated, but mentions return bool from m04_validate import field.\"\"\"\n\ndef is_name_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef field_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_m04_strict_param_2.py": "\"\"\"Variant 2: unrelated, but mentions m04_validate import field m04_form test_main assert.\"\"\"\n\ndef is_name_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef field_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "m04_validate.py": "def is_name(value, strict=False):\n    return value.isidentifier() if strict else bool(value)\n",
+        "m04_form.py": "from m04_validate import is_name\n\ndef field(value):\n    return is_name(value, strict=True)\n"
+      },
+      "expect_pass": [
+        "test_m04.py::test_main"
+      ],
+      "must_keep_passing": []
+    }
+  ]
+}

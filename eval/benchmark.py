@@ -106,7 +106,7 @@ def _outcomes(report) -> dict[str, str]:
     return status
 
 
-def _retrieval_quality(root: str, query: str, expected: list[str], k: int) -> tuple[float, float]:
+def _retrieval_quality(root: str, query: str, expected: list[str], k: int) -> tuple[float, float, float]:
     idx = RepoIndex.build(root)
     hits = HybridRetriever(idx).retrieve(query, limit=k)
     seen = []
@@ -114,13 +114,14 @@ def _retrieval_quality(root: str, query: str, expected: list[str], k: int) -> tu
         if h.path not in seen:
             seen.append(h.path)
     if not expected:
-        return 1.0, 1.0
+        return 1.0, 1.0, 1.0
     recall = sum(1 for p in expected if p in seen) / len(expected)
+    recall_at_1 = 1.0 if seen and seen[0] in expected else 0.0
     mrr = 0.0
     for p in expected:
         if p in seen:
             mrr = max(mrr, 1.0 / (seen.index(p) + 1))
-    return recall, mrr
+    return recall, recall_at_1, mrr
 
 
 def _write_repo(root: str, files: dict[str, str]) -> None:
@@ -136,10 +137,10 @@ def run_task(task: dict, config: BenchConfig, workdir: str) -> dict:
     os.makedirs(root, exist_ok=True)
     _write_repo(root, task["files"])
 
-    recall, mrr = (0.0, 0.0)
+    recall, recall_at_1, mrr = (0.0, 0.0, 0.0)
     if config.use_retrieval:
-        recall, mrr = _retrieval_quality(root, task["task"], task.get("expected_files", []),
-                                         config.context_limit)
+        recall, recall_at_1, mrr = _retrieval_quality(
+            root, task["task"], task.get("expected_files", []), config.context_limit)
 
     model = BlindLLM(task.get("fix", {})) if config.blind else OracleLLM(task.get("fix", {}))
     orch = Orchestrator(
@@ -158,7 +159,7 @@ def run_task(task: dict, config: BenchConfig, workdir: str) -> dict:
         "id": task["id"], "resolved": resolved, "regressed": regressed,
         "status": report.status, "iterations": report.iterations,
         "wall_s": round(wall, 4), "context_chunks": report.context_used,
-        "recall_at_k": round(recall, 4), "mrr": round(mrr, 4),
+        "recall_at_k": round(recall, 4), "recall_at_1": round(recall_at_1, 4), "mrr": round(mrr, 4),
         "files_changed": sorted(report.files_changed),
     }
 
@@ -193,6 +194,7 @@ def run_suite(suite_dir: str, config_name: str) -> dict:
             "mean_iterations": _mean([t["iterations"] for t in tasks]),
             "mean_context_chunks": _mean([t["context_chunks"] for t in tasks]),
             "recall_at_k": _mean([t["recall_at_k"] for t in tasks]),
+            "recall_at_1": _mean([t["recall_at_1"] for t in tasks]),
             "mrr": _mean([t["mrr"] for t in tasks]),
         },
         "tasks": tasks,

@@ -986,6 +986,90 @@
         "test_c50_percentage_calc.py::test_main"
       ],
       "must_keep_passing": []
+    },
+    {
+      "id": "m01_rename_total",
+      "task": "fix the off-by-one in total, rename it to sum_prices in m01_core, and update the m01_cart caller",
+      "expected_files": [
+        "m01_core.py",
+        "m01_cart.py"
+      ],
+      "files": {
+        "m01_core.py": "def total(prices):\n    return sum(prices) - 1\n",
+        "m01_cart.py": "from m01_core import total\n\ndef checkout(prices):\n    return total(prices)\n",
+        "test_m01.py": "from m01_core import sum_prices\nfrom m01_cart import checkout\n\ndef test_main():\n    assert sum_prices([2, 3]) == 5\n    assert checkout([2, 3]) == 5\n"
+      },
+      "fix": {
+        "m01_core.py": "def sum_prices(prices):\n    return sum(prices)\n",
+        "m01_cart.py": "from m01_core import sum_prices\n\ndef checkout(prices):\n    return sum_prices(prices)\n"
+      },
+      "expect_pass": [
+        "test_m01.py::test_main"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "m02_suffix_param",
+      "task": "add a suffix parameter to money in m02_fmt and pass it from m02_invoice",
+      "expected_files": [
+        "m02_fmt.py",
+        "m02_invoice.py"
+      ],
+      "files": {
+        "m02_fmt.py": "def money(value):\n    return f\"{value:.2f}\"\n",
+        "m02_invoice.py": "from m02_fmt import money\n\ndef line(value):\n    return money(value)\n",
+        "test_m02.py": "from m02_invoice import line\n\ndef test_main():\n    assert line(2) == \"2.00 USD\"\n"
+      },
+      "fix": {
+        "m02_fmt.py": "def money(value, suffix=\"\"):\n    return f\"{value:.2f}{suffix}\"\n",
+        "m02_invoice.py": "from m02_fmt import money\n\ndef line(value):\n    return money(value, \" USD\")\n"
+      },
+      "expect_pass": [
+        "test_m02.py::test_main"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "m03_rename_area",
+      "task": "fix the multiply in area, rename it to rect_area in m03_geom, and update m03_shapes",
+      "expected_files": [
+        "m03_geom.py",
+        "m03_shapes.py"
+      ],
+      "files": {
+        "m03_geom.py": "def area(w, h):\n    return w + h\n",
+        "m03_shapes.py": "from m03_geom import area\n\ndef square_area(side):\n    return area(side, side)\n",
+        "test_m03.py": "from m03_geom import rect_area\nfrom m03_shapes import square_area\n\ndef test_main():\n    assert rect_area(2, 3) == 6\n    assert square_area(3) == 9\n"
+      },
+      "fix": {
+        "m03_geom.py": "def rect_area(w, h):\n    return w * h\n",
+        "m03_shapes.py": "from m03_geom import rect_area\n\ndef square_area(side):\n    return rect_area(side, side)\n"
+      },
+      "expect_pass": [
+        "test_m03.py::test_main"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "m04_strict_param",
+      "task": "make is_name reject non-identifiers via a strict flag in m04_validate and use it from m04_form",
+      "expected_files": [
+        "m04_validate.py",
+        "m04_form.py"
+      ],
+      "files": {
+        "m04_validate.py": "def is_name(value):\n    return bool(value)\n",
+        "m04_form.py": "from m04_validate import is_name\n\ndef field(value):\n    return is_name(value)\n",
+        "test_m04.py": "from m04_form import field\n\ndef test_main():\n    assert field(\"1bad\") is False\n    assert field(\"good\") is True\n"
+      },
+      "fix": {
+        "m04_validate.py": "def is_name(value, strict=False):\n    return value.isidentifier() if strict else bool(value)\n",
+        "m04_form.py": "from m04_validate import is_name\n\ndef field(value):\n    return is_name(value, strict=True)\n"
+      },
+      "expect_pass": [
+        "test_m04.py::test_main"
+      ],
+      "must_keep_passing": []
     }
   ]
 }

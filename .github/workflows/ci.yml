@@ -28,3 +28,6 @@ jobs:
       - run: python -m harness eval --suite eval/suites/smoke --config baseline --out /tmp/baseline.json
       - run: python -m harness eval --suite eval/suites/smoke --config blind-full --out /tmp/blind-full.json
       - run: python -m harness compare /tmp/baseline.json /tmp/blind-full.json
+      # Retrieval recall ablation on the distractor-injected hard suite: prints
+      # the lexical/dense/hybrid comparison the recall_at_1 CI floor guards.
+      - run: python -m eval.retrieval_ablation eval/suites/hard --k 5

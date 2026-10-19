@@ -1399,6 +1399,25 @@ def test_curated_suite_is_well_formed():
         for rel in t["expected_files"]:
             assert rel in t["files"] and rel in t["fix"]
             assert t["files"][rel] != t["fix"][rel]
+    assert any(len(t["expected_files"]) > 1 for t in tasks), "expected multi-file tasks"
+
+
+def test_hard_suite_makes_retrieval_non_trivial():
+    import os
+    from eval.benchmark import load_suite
+    from eval.retrieval_ablation import run
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    hard = os.path.join(here, "eval", "suites", "hard")
+    suite = load_suite(hard)
+    assert len(suite["tasks"]) >= 50
+    for t in suite["tasks"]:
+        assert any(name.startswith("distractor_") for name in t["files"]), t["id"]
+        assert not any(word in t["task"] for word in t["expected_files"]), t["id"]
+    modes = run(hard, k=5)["modes"]
+    assert modes["lexical"]["recall_at_1"] < 0.9, "suite should not be trivially retrievable"
+    assert modes["hybrid"]["recall_at_1"] >= modes["lexical"]["recall_at_1"] - 0.02
+    assert modes["hybrid"]["recall_at_1"] >= modes["dense"]["recall_at_1"] - 0.02
+    assert modes["hybrid"]["recall_at_k"] >= 0.35
 
 
 def test_replay_llm_uses_the_edit_contract():
