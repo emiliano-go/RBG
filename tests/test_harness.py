@@ -873,6 +873,36 @@ def test_hit_and_mcp_outputs_carry_revision(tmp_path):
     assert sc["results"][0]["commit_hash"] == sc["revision"]
 
 
+def test_tree_revision_is_content_based_not_metadata(tmp_path):
+    from harness.index import _tree_hash, _tree_signature
+    root = str(tmp_path / "rev")
+    _make_demo_repo(root)
+    path = os.path.join(root, "shop.py")
+    text = open(path).read()
+    fingerprint, signature = _tree_hash(root), _tree_signature(root)
+    st = os.stat(path)
+    edited = ("x" if text[0] != "x" else "y") + text[1:]   # same length
+    with open(path, "w") as fh:
+        fh.write(edited)
+    os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns))    # same mtime
+    assert _tree_signature(root) == signature              # metadata unchanged
+    assert _tree_hash(root) != fingerprint                 # content still caught
+
+
+def test_index_cache_invalidates_after_edit(tmp_path):
+    root = str(tmp_path / "cache")
+    _make_demo_repo(root)
+    mcp_server._INDEX_CACHE.clear()
+    mcp_server._INDEX_SIGNATURE.clear()
+    mcp_server._RETRIEVER_CACHE.clear()
+    first = _call("search_code", {"root": root, "query": "discount"})["result"]["structuredContent"]
+    with open(os.path.join(root, "shop.py"), "w") as fh:
+        fh.write(FIXED_SHOP)
+    second = _call("search_code", {"root": root, "query": "discount"})["result"]["structuredContent"]
+    assert second["revision"] != first["revision"]
+    assert second["index_fresh"] is True
+
+
 # -- plan + step-level drift checks ----------------------------------------- #
 def test_parse_plan_extracts_steps_and_files():
     from harness.plan import parse_plan

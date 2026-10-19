@@ -21,7 +21,7 @@ import sys
 import traceback
 
 from . import db
-from .index import RepoIndex, _tree_hash, chunk_key
+from .index import RepoIndex, _tree_hash, _tree_signature, chunk_key
 from .models import TestSelector
 from .paths import resolve_within
 from .plan import audit_completion, parse_plan, scope_drift
@@ -34,6 +34,7 @@ SERVER_VERSION = "0.2.0"
 DEFAULT_PROTOCOL = "2025-06-18"
 
 _INDEX_CACHE: dict[str, RepoIndex] = {}
+_INDEX_SIGNATURE: dict[str, str] = {}
 _LEARNED_CACHE: dict[str, LearnedModels] = {}
 _RETRIEVER_CACHE: dict[str, HybridRetriever] = {}
 _STORE_CACHE: dict[str, "db.Store | None"] = {}
@@ -73,19 +74,33 @@ def _authorize_root(root: str) -> str:
     return resolved
 
 
+def _evict_dependents(root: str) -> None:
+    """Drop per-repo derivatives keyed to a revision that is no longer current."""
+    _RETRIEVER_CACHE.pop(root, None)
+    for key in [k for k in _LEARNED_CACHE if k == root or k.startswith(root + ":")]:
+        _LEARNED_CACHE.pop(key, None)
+
+
 def _index(root: str) -> RepoIndex:
     root = _authorize_root(root)
-    if root not in _INDEX_CACHE:
-        store = _store(root)
-        try:
-            idx = store.load_index(_tree_hash(root))  # cache hit: no re-parse
-        except Exception:
-            idx = None
-        if idx is None:
-            idx = RepoIndex.build(root)
-            store.save_index(idx)
-        _INDEX_CACHE[root] = idx
-    return _INDEX_CACHE[root]
+    signature = _tree_signature(root)
+    cached = _INDEX_CACHE.get(root)
+    if cached is not None and _INDEX_SIGNATURE.get(root) == signature:
+        return cached
+    fingerprint = _tree_hash(root)
+    store = _store(root)
+    try:
+        idx = store.load_index(fingerprint)  # cache hit: no re-parse
+    except Exception:
+        idx = None
+    if idx is None:
+        idx = RepoIndex.build(root, revision=fingerprint)
+        store.save_index(idx)
+    if cached is not None and cached.revision != idx.revision:
+        _evict_dependents(root)  # stale index/retriever/models must not be served
+    _INDEX_CACHE[root] = idx
+    _INDEX_SIGNATURE[root] = signature
+    return idx
 
 
 def _retriever(root: str) -> HybridRetriever:
@@ -556,7 +571,7 @@ def _index_fresh(idx: RepoIndex) -> bool:
     """Whether the cached index still matches the on-disk tree (spec 5.2: never
     present stale content as current)."""
     try:
-        return _tree_hash(idx.root) == idx.revision
+        return _tree_signature(idx.root) == _INDEX_SIGNATURE.get(idx.root)
     except OSError:
         return False
 

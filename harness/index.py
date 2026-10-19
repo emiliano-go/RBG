@@ -93,9 +93,9 @@ class RepoIndex:
     revision: str = ""
 
     @classmethod
-    def build(cls, root: str) -> "RepoIndex":
+    def build(cls, root: str, revision: str | None = None) -> "RepoIndex":
         root = os.path.abspath(root)
-        idx = cls(root=root, revision=_tree_hash(root))
+        idx = cls(root=root, revision=revision or _tree_hash(root))
         ignored = _git_ignored(root)
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = [
@@ -213,8 +213,8 @@ def is_test_chunk(c: "Chunk") -> bool:
     return sym.startswith("test_") or sym.startswith("Test")
 
 
-def _tree_hash(root: str) -> str:
-    h = hashlib.sha256()
+def _walk_indexable(root: str):
+    """Yield (rel, full) for files the index would read, in a stable order."""
     ignored = _git_ignored(root)
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [
@@ -223,13 +223,43 @@ def _tree_hash(root: str) -> str:
             and os.path.relpath(os.path.join(dirpath, d), root) not in ignored
         ]
         for name in sorted(filenames):
+            if os.path.splitext(name)[1] not in TEXT_EXT:
+                continue
             full = os.path.join(dirpath, name)
             rel = os.path.relpath(full, root)
             if rel in ignored:
                 continue
-            try:
-                st = os.stat(full)
-                h.update(f"{rel}:{st.st_size}:{int(st.st_mtime)}".encode())
-            except OSError:
-                continue
+            yield rel, full
+
+
+def _tree_signature(root: str) -> str:
+    """Cheap freshness signature: path, size and nanosecond mtime only.
+
+    Used to decide whether the cached index is still current without reading
+    file contents; a metadata-only change still trips it, a content-only change
+    with the same size *and* mtime is the one case it cannot see, which is what
+    the content fingerprint below exists to catch on the next real comparison.
+    """
+    h = hashlib.sha256()
+    for rel, full in _walk_indexable(root):
+        try:
+            st = os.stat(full)
+        except OSError:
+            continue
+        h.update(f"{rel}:{st.st_size}:{st.st_mtime_ns}".encode())
+    return h.hexdigest()[:16]
+
+
+def _tree_hash(root: str) -> str:
+    """Content fingerprint over the indexable tree: the source of truth for a
+    revision, so a same-size, mtime-preserving edit still changes it."""
+    h = hashlib.sha256()
+    for rel, full in _walk_indexable(root):
+        try:
+            with open(full, "rb") as fh:
+                data = fh.read()
+        except OSError:
+            continue
+        h.update(rel.encode())
+        h.update(hashlib.sha256(data).digest())
     return h.hexdigest()[:16]
