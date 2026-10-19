@@ -190,6 +190,27 @@ class BM25:
         return [(int(i), float(scores[i])) for i in order[:limit] if scores[i] > 0]
 
 
+class FTSBackend:
+    """Lexical candidates served by a persisted FTS5 index (native BM25).
+
+    ``search(query, limit)`` returns ``(index, score)`` pairs, best first; an
+    empty result falls back to the in-memory scorer so a missing or stale FTS
+    index degrades to the previous behaviour rather than returning nothing.
+    """
+
+    def __init__(self, chunks: list[Chunk], search) -> None:
+        self.chunks = chunks
+        self._search = search
+        self._fallback = BM25(chunks)
+
+    def rank(self, query: str, limit: int = 50) -> list[tuple[int, float]]:
+        try:
+            out = self._search(query, int(limit))
+        except Exception:
+            out = None
+        return out if out else self._fallback.rank(query, limit)
+
+
 class DenseEncoder:
     """Deterministic signed feature-hashing TF-IDF encoder -> L2-normalised
     dense vectors (word tokens + char trigrams)."""
@@ -330,6 +351,18 @@ class LSIEncoder:
         self._normalise()
         return self
 
+    def refresh(self, texts: list[str]) -> "LSIEncoder":
+        """Re-embed documents against the existing projector without a new SVD.
+
+        Doc vectors are ``X^T proj`` (sparse), so a revision change reuses the
+        vocabulary basis and only re-encodes the changed corpus -- no QR/SVD.
+        Falls back to a full fit when there is no projector to reuse.
+        """
+        if self.proj is None or self.proj.shape[0] == 0:
+            return self.fit(texts)
+        self.doc_vecs = np.vstack([self.encode(t) for t in texts]) if texts else np.zeros((0, self.k))
+        return self
+
     def _normalise(self) -> None:
         for mat_name in ("doc_vecs", "proj"):
             mat = getattr(self, mat_name)
@@ -455,10 +488,11 @@ class HybridRetriever:
                   expansion: bool = False, diversify: bool = False,
                   mmr_lambda: float = 0.7, lsi_k: int = 128,
                   encoder: "DenseEncoder | LSIEncoder | None" = None,
+                  lexical=None,
                   include: list[str] | None = None,
                   exclude: list[str] | None = None) -> None:
         self.index = index
-        self.bm25 = BM25(index.chunks)
+        self.bm25 = lexical or BM25(index.chunks)
         if encoder is not None:
             self.encoder = encoder
         elif semantic and len(index.chunks) <= LSI_MAX_CORPUS:

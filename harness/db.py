@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import os
 import pickle
+import re
 import time
 import hashlib
 
@@ -191,6 +192,31 @@ class Store:
         idx.references = {k: sorted(set(v)) for k, v in refs.items()}
         return idx
 
+    # -- lexical candidates (FTS5) --------------------------------------- #
+    def fts_search(self, query: str, limit: int) -> list[tuple[int, float]]:
+        """BM25 lexical candidates from the persisted FTS5 index.
+
+        Returns ``(position_in_index.chunks, score)`` pairs, best first, where
+        position is the chunk's offset in the order ``save_index`` inserted them
+        (so it lines up with a freshly loaded ``RepoIndex.chunks``).  An empty
+        list means "no usable lexical index", never a raised error, so callers
+        can fall back to the in-memory scorer.
+        """
+        terms = [t for t in re.findall(r"[A-Za-z_][A-Za-z0-9_]+", query)]
+        if not terms:
+            return []
+        match = " OR ".join(f'"{t}"' for t in dict.fromkeys(terms))
+        try:
+            ids = [r[0] for r in self.conn.execute("SELECT id FROM chunks ORDER BY id")]
+            pos = {cid: i for i, cid in enumerate(ids)}
+            rows = self.conn.execute(
+                "SELECT rowid, bm25(chunks_fts) AS s FROM chunks_fts "
+                "WHERE chunks_fts MATCH ? ORDER BY s LIMIT ?",
+                (match, int(limit))).fetchall()
+        except Exception:
+            return []
+        return [(pos[r[0]], -float(r[1])) for r in rows if r[0] in pos]
+
     # -- vectors ---------------------------------------------------------- #
     def _has_table(self, name: str) -> bool:
         return bool(self.conn.execute(
@@ -273,6 +299,16 @@ class Store:
         if matrix is None:
             return None
         return encoder_from_state(state, matrix)
+
+    def load_prev_encoder(self):
+        """The last persisted encoder ``(revision, state)`` ignoring the current
+        revision and row count, so a changed tree can warm-start instead of
+        paying a full SVD refit."""
+        rows = self.conn.execute(
+            "SELECT revision, payload FROM models WHERE name='encoder'").fetchall()
+        if not rows:
+            return None
+        return rows[0][0], pickle.loads(rows[0][1])
 
     # -- ledger ----------------------------------------------------------- #
     def append_ledger(self, entry: dict) -> None:

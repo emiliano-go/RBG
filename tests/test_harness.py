@@ -1197,3 +1197,42 @@ def test_search_code_result_cache_isolated_from_callers(tmp_path):
     a["results"][0]["snippet"] = "MUTATED"
     c = _call("search_code", {"root": root, "query": "compute"})["result"]["structuredContent"]
     assert c["results"][0]["snippet"] != "MUTATED"
+
+
+def test_fts_backend_serves_candidates_and_falls_back(tmp_path):
+    from harness import db as hdb
+    from harness.index import RepoIndex
+    from harness.retrieval import BM25, FTSBackend
+    (tmp_path / "m.py").write_text(
+        "def compute_metric():\n    return 42\n\n\ndef other_thing():\n    return 1\n")
+    idx = RepoIndex.build(str(tmp_path))
+    store = hdb.Store(str(tmp_path))
+    store.save_index(idx)
+    fb = FTSBackend(idx.chunks, store.fts_search)
+    got = fb.rank("compute metric", 5)
+    assert got and "compute_metric" in idx.chunks[got[0][0]].content
+    assert fb.rank("!!!", 5) == BM25(idx.chunks).rank("!!!", 5)
+    store.close()
+
+
+def test_lsi_refresh_reuses_projector():
+    from harness.retrieval import LSIEncoder
+    texts = ["alpha beta gamma", "delta epsilon zeta", "alpha delta theta"]
+    enc = LSIEncoder(k=2).fit(texts)
+    vocab, proj = dict(enc.vocab), enc.proj.copy()
+    enc.refresh(texts + ["alpha beta new"])
+    assert enc.vocab == vocab and enc.proj.shape == proj.shape
+    assert enc.doc_vecs.shape[0] == 4
+
+
+def test_warm_start_after_revision_change(tmp_path):
+    from harness import mcp_server
+    root = str(tmp_path)
+    (tmp_path / "m.py").write_text("def alpha():\n    return 1\n\n\ndef beta():\n    return 2\n")
+    mcp_server._INDEX_CACHE.clear()
+    mcp_server._RETRIEVER_CACHE.clear()
+    mcp_server._RESULT_CACHE.clear()
+    _call("search_code", {"root": root, "query": "alpha"})
+    (tmp_path / "m.py").write_text("def alpha():\n    return 1\n\n\ndef gamma():\n    return 3\n")
+    sc = _call("search_code", {"root": root, "query": "gamma"})["result"]["structuredContent"]
+    assert sc["results"]
