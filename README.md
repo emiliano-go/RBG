@@ -265,9 +265,18 @@ rbg compare baseline.json full.json
 python3 -m eval.suites.curated.build --check
 rbg eval --suite eval/suites/curated --config baseline --out curated.json
 
+# causal retrieval ablation: the model only sees retrieved context
+rbg eval --suite eval/suites/curated --config blind-baseline --out blind-base.json
+rbg eval --suite eval/suites/curated --config blind-full --out blind-full.json
+rbg compare blind-base.json blind-full.json
+
 # run the suite
 python3 -m pytest -q
 ```
+
+On the 50-task suite, `blind-baseline` resolves **0/50** (recall 0) and
+`blind-full` resolves **50/50** (recall/MRR 1.0), so the ablation measures
+retrieval causally rather than assuming it.
 
 ---
 

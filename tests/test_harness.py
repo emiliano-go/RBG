@@ -1348,3 +1348,14 @@ def test_replay_example_end_to_end(tmp_path):
     shutil.copytree(os.path.join(here, "examples", "replay"), root)
     assert cmd_replay(str(root), str(root / "transcript.json"),
                       "fix median for even-length lists") == 0
+
+
+def test_blind_ablation_separates_retrieval():
+    from eval.benchmark import run_suite
+    base = run_suite("eval/suites/smoke", "blind-baseline")["metrics"]
+    full = run_suite("eval/suites/smoke", "blind-full")["metrics"]
+    assert base["resolution_rate"] == 0.0
+    assert base["regression_rate"] == 0.0
+    assert full["resolution_rate"] == 1.0
+    assert base["recall_at_k"] == 0.0
+    assert full["recall_at_k"] == 1.0

@@ -13,6 +13,10 @@ Metric groups: task resolution, regressions in kept-passing tests, verification
 coverage, and wall time, each with n; retrieval quality (Recall@k / MRR) when
 retrieval is on.  Learned-model and cost metrics are out of scope here (no
 model tokens are spent).
+
+The default oracle already knows every file, so ``baseline`` and ``full``
+resolve identically by construction.  Use the ``blind-*`` configs, whose model
+may only edit files retrieval surfaced, to get a causal ablation.
 """
 
 from __future__ import annotations
@@ -39,6 +43,7 @@ class BenchConfig:
     use_plan_audit: bool = True
     context_limit: int = 15
     max_iterations: int = 3
+    blind: bool = False
 
 
 CONFIGS = {
@@ -46,6 +51,10 @@ CONFIGS = {
     "+retrieval": BenchConfig("+retrieval", use_retrieval=True, use_plan_audit=False),
     "+plan_audit": BenchConfig("+plan_audit", use_retrieval=True, use_plan_audit=True),
     "full": BenchConfig("full", use_retrieval=True, use_reranker=True, use_plan_audit=True),
+    "blind-baseline": BenchConfig("blind-baseline", use_retrieval=False,
+                                  use_plan_audit=False, blind=True),
+    "blind-full": BenchConfig("blind-full", use_retrieval=True, use_reranker=True,
+                              use_plan_audit=True, blind=True),
 }
 
 
@@ -61,6 +70,25 @@ class OracleLLM:
 
     def edit(self, task: str, plan: str, context, diagnostics: str = "") -> list[EditOp]:
         return [EditOp(path, content) for path, content in self.fix.items()]
+
+
+class BlindLLM(OracleLLM):
+    """An oracle that only sees retrieved context.
+
+    It may edit a file only when that path was surfaced by retrieval, so a task
+    resolves exactly when the retriever found the right file.  This makes the
+    ablation causal: ``blind-baseline`` has no context and cannot resolve,
+    ``blind-full`` can.  Without it, ``OracleLLM`` already knows every path and
+    resolution is identical across configs by construction.
+    """
+
+    def plan(self, task: str, context) -> str:
+        seen = ", ".join(sorted({h.path for h in context})) or "nothing retrieved"
+        return f"1. Inspect the retrieved files: {seen}.\n2. Fix the bug and run the tests."
+
+    def edit(self, task: str, plan: str, context, diagnostics: str = "") -> list[EditOp]:
+        visible = {h.path for h in context}
+        return [EditOp(path, content) for path, content in self.fix.items() if path in visible]
 
 
 def load_suite(suite_dir: str) -> dict:
@@ -113,8 +141,9 @@ def run_task(task: dict, config: BenchConfig, workdir: str) -> dict:
         recall, mrr = _retrieval_quality(root, task["task"], task.get("expected_files", []),
                                          config.context_limit)
 
+    model = BlindLLM(task.get("fix", {})) if config.blind else OracleLLM(task.get("fix", {}))
     orch = Orchestrator(
-        root, OracleLLM(task.get("fix", {})),
+        root, model,
         use_retrieval=config.use_retrieval, use_reranker=config.use_reranker,
         use_plan_audit=config.use_plan_audit, context_limit=config.context_limit,
         max_iterations=config.max_iterations)
@@ -124,7 +153,7 @@ def run_task(task: dict, config: BenchConfig, workdir: str) -> dict:
 
     status = _outcomes(report)
     resolved = all(status.get(t) == "passed" for t in task.get("expect_pass", []))
-    regressed = any(status.get(t) != "passed" for t in task.get("must_keep_passing", []))
+    regressed = any(status.get(t) == "failed" for t in task.get("must_keep_passing", []))
     return {
         "id": task["id"], "resolved": resolved, "regressed": regressed,
         "status": report.status, "iterations": report.iterations,
