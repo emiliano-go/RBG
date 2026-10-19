@@ -16,6 +16,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [project.scripts]
 rbg = "harness.__main__:main"
 rbg-mcp = "harness.mcp_server:main"
