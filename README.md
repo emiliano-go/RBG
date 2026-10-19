@@ -257,6 +257,10 @@ rbg eval --suite eval/suites/smoke --config baseline --out baseline.json
 rbg eval --suite eval/suites/smoke --config full --out full.json
 rbg compare baseline.json full.json
 
+# the 50-task curated bugfix suite (regenerate + verify task-by-task)
+python3 -m eval.suites.curated.build --check
+rbg eval --suite eval/suites/curated --config baseline --out curated.json
+
 # run the suite
 python3 -m pytest -q
 ```

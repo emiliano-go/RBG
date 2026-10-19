@@ -1314,3 +1314,19 @@ def test_mcp_plan_tools_roundtrip_and_persist(tmp_path):
     actions = {e["result"]["action"] for e in hdb.Store(root).read_ledger()
                if e["component"] == "plan"}
     assert {"create", "append", "complete"} <= actions
+
+
+def test_curated_suite_is_well_formed():
+    import os
+    from eval.benchmark import load_suite
+    suite = load_suite(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                    "eval", "suites", "curated"))
+    tasks = suite["tasks"]
+    assert len(tasks) >= 50
+    ids = [t["id"] for t in tasks]
+    assert len(ids) == len(set(ids))
+    for t in tasks:
+        assert t["files"] and t["fix"] and t["expect_pass"]
+        for rel in t["expected_files"]:
+            assert rel in t["files"] and rel in t["fix"]
+            assert t["files"][rel] != t["fix"][rel]
