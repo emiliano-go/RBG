@@ -1,0 +1,173 @@
+{
+  "name": "multifile",
+  "tasks": [
+    {
+      "id": "m01_rename_total",
+      "task": "fix the off-by-one in total, rename it to sum_prices in m01_core, and update the m01_cart caller",
+      "expected_files": [
+        "m01_core.py",
+        "m01_cart.py"
+      ],
+      "files": {
+        "m01_core.py": "def total(prices):\n    return sum(prices) - 1\n",
+        "m01_cart.py": "from m01_core import total\n\ndef checkout(prices):\n    return total(prices)\n",
+        "test_m01.py": "from m01_core import sum_prices\nfrom m01_cart import checkout\n\ndef test_main():\n    assert sum_prices([2, 3]) == 5\n    assert checkout([2, 3]) == 5\n"
+      },
+      "fix": {
+        "m01_core.py": "def sum_prices(prices):\n    return sum(prices)\n",
+        "m01_cart.py": "from m01_core import sum_prices\n\ndef checkout(prices):\n    return sum_prices(prices)\n"
+      },
+      "expect_pass": [
+        "test_m01.py::test_main"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "m02_suffix_param",
+      "task": "add a suffix parameter to money in m02_fmt and pass it from m02_invoice",
+      "expected_files": [
+        "m02_fmt.py",
+        "m02_invoice.py"
+      ],
+      "files": {
+        "m02_fmt.py": "def money(value):\n    return f\"{value:.2f}\"\n",
+        "m02_invoice.py": "from m02_fmt import money\n\ndef line(value):\n    return money(value)\n",
+        "test_m02.py": "from m02_invoice import line\n\ndef test_main():\n    assert line(2) == \"2.00 USD\"\n"
+      },
+      "fix": {
+        "m02_fmt.py": "def money(value, suffix=\"\"):\n    return f\"{value:.2f}{suffix}\"\n",
+        "m02_invoice.py": "from m02_fmt import money\n\ndef line(value):\n    return money(value, \" USD\")\n"
+      },
+      "expect_pass": [
+        "test_m02.py::test_main"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "m03_rename_area",
+      "task": "fix the multiply in area, rename it to rect_area in m03_geom, and update m03_shapes",
+      "expected_files": [
+        "m03_geom.py",
+        "m03_shapes.py"
+      ],
+      "files": {
+        "m03_geom.py": "def area(w, h):\n    return w + h\n",
+        "m03_shapes.py": "from m03_geom import area\n\ndef square_area(side):\n    return area(side, side)\n",
+        "test_m03.py": "from m03_geom import rect_area\nfrom m03_shapes import square_area\n\ndef test_main():\n    assert rect_area(2, 3) == 6\n    assert square_area(3) == 9\n"
+      },
+      "fix": {
+        "m03_geom.py": "def rect_area(w, h):\n    return w * h\n",
+        "m03_shapes.py": "from m03_geom import rect_area\n\ndef square_area(side):\n    return rect_area(side, side)\n"
+      },
+      "expect_pass": [
+        "test_m03.py::test_main"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "m04_strict_param",
+      "task": "make is_name reject non-identifiers via a strict flag in m04_validate and use it from m04_form",
+      "expected_files": [
+        "m04_validate.py",
+        "m04_form.py"
+      ],
+      "files": {
+        "m04_validate.py": "def is_name(value):\n    return bool(value)\n",
+        "m04_form.py": "from m04_validate import is_name\n\ndef field(value):\n    return is_name(value)\n",
+        "test_m04.py": "from m04_form import field\n\ndef test_main():\n    assert field(\"1bad\") is False\n    assert field(\"good\") is True\n"
+      },
+      "fix": {
+        "m04_validate.py": "def is_name(value, strict=False):\n    return value.isidentifier() if strict else bool(value)\n",
+        "m04_form.py": "from m04_validate import is_name\n\ndef field(value):\n    return is_name(value, strict=True)\n"
+      },
+      "expect_pass": [
+        "test_m04.py::test_main"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "m05_rename_label",
+      "task": "make label return a string, rename it to title in m05_tag, and update m05_doc",
+      "expected_files": [
+        "m05_tag.py",
+        "m05_doc.py"
+      ],
+      "files": {
+        "m05_tag.py": "def label(x):\n    return x\n",
+        "m05_doc.py": "from m05_tag import label\n\ndef heading(x):\n    return \"# \" + label(x)\n",
+        "test_m05.py": "from m05_tag import title\nfrom m05_doc import heading\n\ndef test_main():\n    assert title(3) == \"3\"\n    assert heading(3) == \"# 3\"\n"
+      },
+      "fix": {
+        "m05_tag.py": "def title(x):\n    return str(x)\n",
+        "m05_doc.py": "from m05_tag import title\n\ndef heading(x):\n    return \"# \" + title(x)\n"
+      },
+      "expect_pass": [
+        "test_m05.py::test_main"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "m06_repeat_param",
+      "task": "add a times parameter to repeat in m06_repeat and pass it from m06_banner",
+      "expected_files": [
+        "m06_repeat.py",
+        "m06_banner.py"
+      ],
+      "files": {
+        "m06_repeat.py": "def repeat(s):\n    return s * 2\n",
+        "m06_banner.py": "from m06_repeat import repeat\n\ndef banner(s):\n    return repeat(s)\n",
+        "test_m06.py": "from m06_banner import banner\n\ndef test_main():\n    assert banner(\"ab\") == \"ababab\"\n"
+      },
+      "fix": {
+        "m06_repeat.py": "def repeat(s, times=1):\n    return s * times\n",
+        "m06_banner.py": "from m06_repeat import repeat\n\ndef banner(s):\n    return repeat(s, 3)\n"
+      },
+      "expect_pass": [
+        "test_m06.py::test_main"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "m07_rename_cycle",
+      "task": "fix the duplicate last element, rename cycle to concat_self in m07_cy, and update m07_ring",
+      "expected_files": [
+        "m07_cy.py",
+        "m07_ring.py"
+      ],
+      "files": {
+        "m07_cy.py": "def cycle(xs):\n    return xs + xs[:-1]\n",
+        "m07_ring.py": "from m07_cy import cycle\n\ndef doubled(xs):\n    return cycle(xs)\n",
+        "test_m07.py": "from m07_cy import concat_self\nfrom m07_ring import doubled\n\ndef test_main():\n    assert concat_self([1, 2]) == [1, 2, 1, 2]\n    assert doubled([1, 2]) == [1, 2, 1, 2]\n"
+      },
+      "fix": {
+        "m07_cy.py": "def concat_self(xs):\n    return xs + xs\n",
+        "m07_ring.py": "from m07_cy import concat_self\n\ndef doubled(xs):\n    return concat_self(xs)\n"
+      },
+      "expect_pass": [
+        "test_m07.py::test_main"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "m08_join_sep",
+      "task": "add a separator parameter to glue in m08_join and pass a slash from m08_path",
+      "expected_files": [
+        "m08_join.py",
+        "m08_path.py"
+      ],
+      "files": {
+        "m08_join.py": "def glue(parts):\n    return \"-\".join(parts)\n",
+        "m08_path.py": "from m08_join import glue\n\ndef path(*parts):\n    return glue(parts)\n",
+        "test_m08.py": "from m08_path import path\n\ndef test_main():\n    assert path(\"a\", \"b\") == \"a/b\"\n"
+      },
+      "fix": {
+        "m08_join.py": "def glue(parts, sep=\"-\"):\n    return sep.join(parts)\n",
+        "m08_path.py": "from m08_join import glue\n\ndef path(*parts):\n    return glue(parts, \"/\")\n"
+      },
+      "expect_pass": [
+        "test_m08.py::test_main"
+      ],
+      "must_keep_passing": []
+    }
+  ]
+}

@@ -1447,3 +1447,12 @@ def test_blind_ablation_separates_retrieval():
     assert full["resolution_rate"] == 1.0
     assert base["recall_at_k"] == 0.0
     assert full["recall_at_k"] == 1.0
+
+
+def test_plan_audit_finishes_multifile_fixes():
+    from eval.benchmark import run_suite
+    off = run_suite("eval/suites/multifile", "partial-noaudit")["metrics"]
+    on = run_suite("eval/suites/multifile", "partial-audit")["metrics"]
+    assert off["resolution_rate"] == 0.0
+    assert on["resolution_rate"] == 1.0
+    assert off["mean_iterations"] < on["mean_iterations"]

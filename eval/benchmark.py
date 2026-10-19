@@ -44,6 +44,7 @@ class BenchConfig:
     context_limit: int = 15
     max_iterations: int = 3
     blind: bool = False
+    partial: bool = False
 
 
 CONFIGS = {
@@ -55,6 +56,12 @@ CONFIGS = {
                                   use_plan_audit=False, blind=True),
     "blind-full": BenchConfig("blind-full", use_retrieval=True, use_reranker=True,
                               use_plan_audit=True, blind=True),
+    # The plan-audit pair: an oracle that edits one planned file per iteration,
+    # so it only finishes when the repair loop reports the files still missing.
+    "partial-noaudit": BenchConfig("partial-noaudit", use_retrieval=False,
+                                   use_plan_audit=False, partial=True),
+    "partial-audit": BenchConfig("partial-audit", use_retrieval=False,
+                                 use_plan_audit=True, partial=True),
 }
 
 
@@ -89,6 +96,29 @@ class BlindLLM(OracleLLM):
     def edit(self, task: str, plan: str, context, diagnostics: str = "") -> list[EditOp]:
         visible = {h.path for h in context}
         return [EditOp(path, content) for path, content in self.fix.items() if path in visible]
+
+
+class PartialLLM(OracleLLM):
+    """An oracle that edits one planned file per iteration.
+
+    It commits to every expected file in its plan but only applies the first
+    until the repair loop tells it which planned files are still untouched.
+    Without plan-audit drift feedback it stops after one file and the
+    multi-file fix is incomplete, so resolution measures the audit, not the
+    model.
+    """
+
+    def __init__(self, fix: dict[str, str], expected: list[str]) -> None:
+        super().__init__(fix)
+        self.expected = [p for p in expected if p in fix] or list(self.fix)
+
+    def plan(self, task: str, context) -> str:
+        steps = "\n".join(f"{i}. Edit {p}." for i, p in enumerate(self.expected, 1))
+        return f"{steps}\n{len(self.expected) + 1}. Run the tests to confirm the fix."
+
+    def edit(self, task: str, plan: str, context, diagnostics: str = "") -> list[EditOp]:
+        todo = [p for p in self.expected if p in diagnostics] or [self.expected[0]]
+        return [EditOp(p, self.fix[p]) for p in todo if p in self.fix]
 
 
 def load_suite(suite_dir: str) -> dict:
@@ -142,7 +172,13 @@ def run_task(task: dict, config: BenchConfig, workdir: str) -> dict:
         recall, recall_at_1, mrr = _retrieval_quality(
             root, task["task"], task.get("expected_files", []), config.context_limit)
 
-    model = BlindLLM(task.get("fix", {})) if config.blind else OracleLLM(task.get("fix", {}))
+    fix = task.get("fix", {})
+    if config.partial:
+        model = PartialLLM(fix, task.get("expected_files", []))
+    elif config.blind:
+        model = BlindLLM(fix)
+    else:
+        model = OracleLLM(fix)
     orch = Orchestrator(
         root, model,
         use_retrieval=config.use_retrieval, use_reranker=config.use_reranker,

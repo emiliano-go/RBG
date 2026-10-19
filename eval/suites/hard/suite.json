@@ -1232,6 +1232,102 @@
         "test_m04.py::test_main"
       ],
       "must_keep_passing": []
+    },
+    {
+      "id": "m05_rename_label",
+      "task": "make return a string, rename it to title in , and update",
+      "expected_files": [
+        "m05_tag.py",
+        "m05_doc.py"
+      ],
+      "files": {
+        "m05_tag.py": "def label(x):\n    return x\n",
+        "m05_doc.py": "from m05_tag import label\n\ndef heading(x):\n    return \"# \" + label(x)\n",
+        "test_m05.py": "from m05_tag import title\nfrom m05_doc import heading\n\ndef test_main():\n    assert title(3) == \"3\"\n    assert heading(3) == \"# 3\"\n",
+        "distractor_m05_rename_label_0.py": "\"\"\"Variant 0: unrelated, but mentions def label return from m05_tag import.\"\"\"\n\ndef label_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef heading_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_m05_rename_label_1.py": "\"\"\"Variant 1: unrelated, but mentions from m05_tag import heading title m05_doc.\"\"\"\n\ndef label_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef heading_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_m05_rename_label_2.py": "\"\"\"Variant 2: unrelated, but mentions heading title m05_doc test_main assert make.\"\"\"\n\ndef label_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef heading_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "m05_tag.py": "def title(x):\n    return str(x)\n",
+        "m05_doc.py": "from m05_tag import title\n\ndef heading(x):\n    return \"# \" + title(x)\n"
+      },
+      "expect_pass": [
+        "test_m05.py::test_main"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "m06_repeat_param",
+      "task": "add a times parameter to in and pass it from",
+      "expected_files": [
+        "m06_repeat.py",
+        "m06_banner.py"
+      ],
+      "files": {
+        "m06_repeat.py": "def repeat(s):\n    return s * 2\n",
+        "m06_banner.py": "from m06_repeat import repeat\n\ndef banner(s):\n    return repeat(s)\n",
+        "test_m06.py": "from m06_banner import banner\n\ndef test_main():\n    assert banner(\"ab\") == \"ababab\"\n",
+        "distractor_m06_repeat_param_0.py": "\"\"\"Variant 0: unrelated, but mentions def repeat return from m06_repeat import.\"\"\"\n\ndef repeat_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef banner_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_m06_repeat_param_1.py": "\"\"\"Variant 1: unrelated, but mentions from m06_repeat import banner m06_banner test_main.\"\"\"\n\ndef repeat_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef banner_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_m06_repeat_param_2.py": "\"\"\"Variant 2: unrelated, but mentions banner m06_banner test_main assert ababab add.\"\"\"\n\ndef repeat_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef banner_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "m06_repeat.py": "def repeat(s, times=1):\n    return s * times\n",
+        "m06_banner.py": "from m06_repeat import repeat\n\ndef banner(s):\n    return repeat(s, 3)\n"
+      },
+      "expect_pass": [
+        "test_m06.py::test_main"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "m07_rename_cycle",
+      "task": "fix the duplicate last element, rename to concat_self in , and update",
+      "expected_files": [
+        "m07_cy.py",
+        "m07_ring.py"
+      ],
+      "files": {
+        "m07_cy.py": "def cycle(xs):\n    return xs + xs[:-1]\n",
+        "m07_ring.py": "from m07_cy import cycle\n\ndef doubled(xs):\n    return cycle(xs)\n",
+        "test_m07.py": "from m07_cy import concat_self\nfrom m07_ring import doubled\n\ndef test_main():\n    assert concat_self([1, 2]) == [1, 2, 1, 2]\n    assert doubled([1, 2]) == [1, 2, 1, 2]\n",
+        "distractor_m07_rename_cycle_0.py": "\"\"\"Variant 0: unrelated, but mentions def cycle return from m07_cy import.\"\"\"\n\ndef cycle_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef doubled_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_m07_rename_cycle_1.py": "\"\"\"Variant 1: unrelated, but mentions from m07_cy import doubled concat_self m07_ring.\"\"\"\n\ndef cycle_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef doubled_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_m07_rename_cycle_2.py": "\"\"\"Variant 2: unrelated, but mentions doubled concat_self m07_ring test_main assert fix.\"\"\"\n\ndef cycle_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef doubled_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "m07_cy.py": "def concat_self(xs):\n    return xs + xs\n",
+        "m07_ring.py": "from m07_cy import concat_self\n\ndef doubled(xs):\n    return concat_self(xs)\n"
+      },
+      "expect_pass": [
+        "test_m07.py::test_main"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "m08_join_sep",
+      "task": "add a separator parameter to in and pass a slash from",
+      "expected_files": [
+        "m08_join.py",
+        "m08_path.py"
+      ],
+      "files": {
+        "m08_join.py": "def glue(parts):\n    return \"-\".join(parts)\n",
+        "m08_path.py": "from m08_join import glue\n\ndef path(*parts):\n    return glue(parts)\n",
+        "test_m08.py": "from m08_path import path\n\ndef test_main():\n    assert path(\"a\", \"b\") == \"a/b\"\n",
+        "distractor_m08_join_sep_0.py": "\"\"\"Variant 0: unrelated, but mentions def glue parts return join from.\"\"\"\n\ndef glue_alt0(*args, **kwargs):\n    return 0 + 0\n\ndef path_alt0(*args, **kwargs):\n    return 0 + 1\n\ndef test_main_alt0(*args, **kwargs):\n    return 0 + 2\n\n",
+        "distractor_m08_join_sep_1.py": "\"\"\"Variant 1: unrelated, but mentions return join from m08_join import path.\"\"\"\n\ndef glue_alt1(*args, **kwargs):\n    return 1 + 0\n\ndef path_alt1(*args, **kwargs):\n    return 1 + 1\n\ndef test_main_alt1(*args, **kwargs):\n    return 1 + 2\n\n",
+        "distractor_m08_join_sep_2.py": "\"\"\"Variant 2: unrelated, but mentions m08_join import path m08_path test_main assert.\"\"\"\n\ndef glue_alt2(*args, **kwargs):\n    return 2 + 0\n\ndef path_alt2(*args, **kwargs):\n    return 2 + 1\n\ndef test_main_alt2(*args, **kwargs):\n    return 2 + 2\n\n"
+      },
+      "fix": {
+        "m08_join.py": "def glue(parts, sep=\"-\"):\n    return sep.join(parts)\n",
+        "m08_path.py": "from m08_join import glue\n\ndef path(*parts):\n    return glue(parts, \"/\")\n"
+      },
+      "expect_pass": [
+        "test_m08.py::test_main"
+      ],
+      "must_keep_passing": []
     }
   ]
 }

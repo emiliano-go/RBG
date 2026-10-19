@@ -271,8 +271,9 @@ eval/
   perf.py           tool latency benchmark (p50/p95 + budget gate)
   retrieval_ablation.py  lexical/dense/hybrid recall@1/@k/MRR ablation
   suites/smoke/     3-task suite run in CI
-  suites/curated/   54 verified bugfix tasks (incl. multi-file) + build.py --check
+  suites/curated/   54 verified bugfix tasks + build.py --check
   suites/hard/      curated with the answer's names stripped + distractors
+  suites/multifile/ the 8 multi-file tasks, for the plan-audit ablation
 examples/replay/   buggy module + test + recorded transcript (no key)
 tests/
   test_harness.py   end-to-end suite
@@ -324,6 +325,12 @@ rbg eval --suite eval/suites/curated --config blind-baseline --out blind-base.js
 rbg eval --suite eval/suites/curated --config blind-full --out blind-full.json
 rbg compare blind-base.json blind-full.json
 
+# causal plan-audit ablation: one oracle that edits one planned file per
+# iteration, with and without the drift feedback that names the rest
+rbg eval --suite eval/suites/multifile --config partial-noaudit --out noaudit.json
+rbg eval --suite eval/suites/multifile --config partial-audit --out audit.json
+rbg compare noaudit.json audit.json
+
 # farm a real ledger, train, and gate the risk head on held-out evidence
 python3 -m eval.ledger_farm --suite eval/suites/curated --tasks 50
 rbg validate-models /path/to/repo --min-test 20
@@ -341,6 +348,11 @@ curated suite. The hard suite strips those names from the query and adds
 distractor modules that share the vocabulary: recall@1 drops to ~0.26 for the
 hybrid retriever, ahead of lexical-only and dense-only, and `pytest` fails if
 any mode ever returns to triviality.
+
+The plan-audit ablation is causal too: `partial-noaudit` uses a model that
+edits one planned file per iteration and stops there, and `partial-audit`
+gives it the drift feedback that names the remaining files. On the 8
+multi-file tasks the former resolves 0/8 and the latter 8/8.
 
 ---
 

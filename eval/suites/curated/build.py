@@ -29,6 +29,7 @@ import re
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "suite.json")
 HARD_OUT = os.path.join(os.path.dirname(HERE), "hard", "suite.json")
+MULTI_OUT = os.path.join(os.path.dirname(HERE), "multifile", "suite.json")
 DISTRACTORS = 3
 
 
@@ -1256,6 +1257,130 @@ MULTI = [
             assert field("good") is True
       """},
       ["m04_validate.py", "m04_form.py"]),
+
+    M("m05_rename_label",
+      "make label return a string, rename it to title in m05_tag, and update m05_doc",
+      {"m05_tag.py": """
+        def label(x):
+            return x
+      """,
+       "m05_doc.py": """
+        from m05_tag import label
+
+        def heading(x):
+            return "# " + label(x)
+      """},
+      {"m05_tag.py": """
+        def title(x):
+            return str(x)
+      """,
+       "m05_doc.py": """
+        from m05_tag import title
+
+        def heading(x):
+            return "# " + title(x)
+      """},
+      {"test_m05.py": """
+        from m05_tag import title
+        from m05_doc import heading
+
+        def test_main():
+            assert title(3) == "3"
+            assert heading(3) == "# 3"
+      """},
+      ["m05_tag.py", "m05_doc.py"]),
+
+    M("m06_repeat_param",
+      "add a times parameter to repeat in m06_repeat and pass it from m06_banner",
+      {"m06_repeat.py": """
+        def repeat(s):
+            return s * 2
+      """,
+       "m06_banner.py": """
+        from m06_repeat import repeat
+
+        def banner(s):
+            return repeat(s)
+      """},
+      {"m06_repeat.py": """
+        def repeat(s, times=1):
+            return s * times
+      """,
+       "m06_banner.py": """
+        from m06_repeat import repeat
+
+        def banner(s):
+            return repeat(s, 3)
+      """},
+      {"test_m06.py": """
+        from m06_banner import banner
+
+        def test_main():
+            assert banner("ab") == "ababab"
+      """},
+      ["m06_repeat.py", "m06_banner.py"]),
+
+    M("m07_rename_cycle",
+      "fix the duplicate last element, rename cycle to concat_self in m07_cy, and update m07_ring",
+      {"m07_cy.py": """
+        def cycle(xs):
+            return xs + xs[:-1]
+      """,
+       "m07_ring.py": """
+        from m07_cy import cycle
+
+        def doubled(xs):
+            return cycle(xs)
+      """},
+      {"m07_cy.py": """
+        def concat_self(xs):
+            return xs + xs
+      """,
+       "m07_ring.py": """
+        from m07_cy import concat_self
+
+        def doubled(xs):
+            return concat_self(xs)
+      """},
+      {"test_m07.py": """
+        from m07_cy import concat_self
+        from m07_ring import doubled
+
+        def test_main():
+            assert concat_self([1, 2]) == [1, 2, 1, 2]
+            assert doubled([1, 2]) == [1, 2, 1, 2]
+      """},
+      ["m07_cy.py", "m07_ring.py"]),
+
+    M("m08_join_sep",
+      "add a separator parameter to glue in m08_join and pass a slash from m08_path",
+      {"m08_join.py": """
+        def glue(parts):
+            return "-".join(parts)
+      """,
+       "m08_path.py": """
+        from m08_join import glue
+
+        def path(*parts):
+            return glue(parts)
+      """},
+      {"m08_join.py": """
+        def glue(parts, sep="-"):
+            return sep.join(parts)
+      """,
+       "m08_path.py": """
+        from m08_join import glue
+
+        def path(*parts):
+            return glue(parts, "/")
+      """},
+      {"test_m08.py": """
+        from m08_path import path
+
+        def test_main():
+            assert path("a", "b") == "a/b"
+      """},
+      ["m08_join.py", "m08_path.py"]),
 ]
 
 
@@ -1321,6 +1446,14 @@ def build_hard() -> dict:
                       for task in ALL_TASKS]}
 
 
+def build_multifile() -> dict:
+    return {"name": "multifile", "tasks": MULTI}
+
+
+def build_all() -> list:
+    return [(OUT, build_suite()), (HARD_OUT, build_hard()), (MULTI_OUT, build_multifile())]
+
+
 def _run(root: str) -> subprocess.CompletedProcess:
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
     return subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"],
@@ -1365,7 +1498,7 @@ def main(argv=None) -> int:
         code = check()
         if code:
             return code
-    for path, suite in ((OUT, build_suite()), (HARD_OUT, build_hard())):
+    for path, suite in build_all():
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(suite, fh, indent=2)
