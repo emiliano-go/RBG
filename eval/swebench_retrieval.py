@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import pickle
 import re
 import subprocess
 import sys
@@ -98,7 +99,39 @@ def ensure_repo(repo: str, base_commit: str, cache: str) -> str:
     return path
 
 
-def score_instance(instance: dict, cache: str, k: int) -> dict:
+def _index_cache_path(cache: str, repo: str, commit: str) -> str:
+    return os.path.join(cache, "indexes", f"{repo.replace('/', '__')}@{commit}")
+
+
+def load_or_build_index(path: str, repo: str, commit: str, cache: str) -> RepoIndex:
+    """The parsed index for a checked-out commit, reused across runs.
+
+    Parsing dominates a retrieval-only SWE-bench run (~50 s/instance), and the
+    same instances are re-scored whenever the encoder or fusion changes.
+    ``ensure_repo`` has already forced the tree to ``commit``, so the commit is
+    a valid key; a pickle whose revision disagrees is rebuilt, not trusted.
+    """
+    fp = _index_cache_path(cache, repo, commit)
+    try:
+        with open(fp, "rb") as fh:
+            idx = pickle.load(fh)
+        if getattr(idx, "revision", None) == commit:
+            return idx
+    except (OSError, EOFError, pickle.UnpicklingError, AttributeError):
+        pass
+    idx = RepoIndex.build(path, revision=commit)
+    try:
+        os.makedirs(os.path.dirname(fp), exist_ok=True)
+        tmp = fp + ".tmp"
+        with open(tmp, "wb") as fh:
+            pickle.dump(idx, fh, protocol=pickle.HIGHEST_PROTOCOL)
+        os.replace(tmp, fp)
+    except OSError:
+        pass
+    return idx
+
+
+def score_instance(instance: dict, cache: str, k: int, use_index_cache: bool = True) -> dict:
     instance_id = instance.get("instance_id", instance.get("repo", "?"))
     gold = parse_patch_files(instance.get("patch", ""))
     row = {"instance_id": instance_id, "repo": instance.get("repo"),
@@ -112,7 +145,11 @@ def score_instance(instance: dict, cache: str, k: int) -> dict:
         row.update({"error": str(exc)})
         return row
     try:
-        idx = RepoIndex.build(path)
+        if use_index_cache:
+            idx = load_or_build_index(path, instance["repo"],
+                                      instance["base_commit"], cache)
+        else:
+            idx = RepoIndex.build(path, revision=instance["base_commit"])
         hits = HybridRetriever(idx).retrieve(instance["problem_statement"], limit=k)
     except Exception as exc:  # noqa: BLE001
         row.update({"error": f"retrieve: {exc}"})
@@ -154,7 +191,7 @@ def _report(rows: list[dict], total: int, k: int) -> dict:
 
 def run_report(instances: list[dict], cache: str, k: int = 10,
                progress=None, seed: list[dict] | None = None,
-               checkpoint=None) -> dict:
+               checkpoint=None, use_index_cache: bool = True) -> dict:
     """Score every instance; ``seed`` rows are reused (resume) and ``checkpoint``
     is called with the accumulated rows after each new one, so a mid-run kill
     keeps the instances already scored."""
@@ -165,7 +202,7 @@ def run_report(instances: list[dict], cache: str, k: int = 10,
             progress(i, len(instances), instance.get("instance_id", "?"))
         if instance.get("instance_id") in done:
             continue
-        rows.append(score_instance(instance, cache, k))
+        rows.append(score_instance(instance, cache, k, use_index_cache))
         if checkpoint:
             checkpoint(_report(rows, len(instances), k))
     return _report(rows, len(instances), k)
@@ -182,6 +219,8 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default="")
     ap.add_argument("--device", default="",
                     help="semantic encoder device (cuda/cpu); empty = auto (CUDA if present)")
+    ap.add_argument("--no-index-cache", action="store_true",
+                    help="re-parse every tree instead of reusing the commit-keyed cache")
     args = ap.parse_args(argv)
     if args.device:
         os.environ["RBG_EMBEDDING_DEVICE"] = args.device
@@ -209,7 +248,8 @@ def main(argv=None) -> int:
                 json.dump(report, fh, indent=2)
 
     report = run_report(instances, args.cache, args.k, progress=progress,
-                        seed=seed, checkpoint=checkpoint)
+                        seed=seed, checkpoint=checkpoint,
+                        use_index_cache=not args.no_index_cache)
     m = report["metrics"]
     print(f"scored {report['scored']}/{report['instances']} (errors {report['errors']})")
     print(f"recall@{args.k}={m['recall_at_k']} recall@1={m['recall_at_1']} mrr={m['mrr']}")

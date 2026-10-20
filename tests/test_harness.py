@@ -1619,6 +1619,30 @@ def test_swebench_retrieval_scores_gold_files(tmp_path):
     assert report["results"][0]["gold_files"] == ["target.py"]
 
 
+def test_swebench_index_cache_is_keyed_by_commit(tmp_path, monkeypatch):
+    from eval.swebench_retrieval import load_or_build_index
+    from harness.index import RepoIndex
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "a.py").write_text("def a():\n    return 1\n")
+    calls = {"n": 0}
+    build = RepoIndex.build
+
+    def counted(*args, **kwargs):
+        calls["n"] += 1
+        return build(*args, **kwargs)
+
+    monkeypatch.setattr(RepoIndex, "build", counted)
+    cache = str(tmp_path / "cache")
+    first = load_or_build_index(str(repo), "org/repo", "abc123", cache)
+    again = load_or_build_index(str(repo), "org/repo", "abc123", cache)
+    assert calls["n"] == 1
+    assert [c.path for c in again.chunks] == [c.path for c in first.chunks]
+    load_or_build_index(str(repo), "org/repo", "def456", cache)
+    assert calls["n"] == 2
+
+
 # -- dynamic PTS ground truth (F2) ------------------------------------------ #
 def test_pts_mutation_injects_probe_before_body():
     from eval.pts_dynamic import mutate_source
