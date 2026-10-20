@@ -21,6 +21,12 @@ import sys
 import time
 import traceback
 from collections import OrderedDict
+from contextlib import contextmanager
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - non-POSIX; DB busy-timeout still guards writes
+    fcntl = None
 
 from . import db
 from .checks import compile_command, detect, runner_argv
@@ -142,6 +148,27 @@ def _evict_dependents(root: str) -> None:
         _RESULT_CACHE.pop(key, None)
 
 
+@contextmanager
+def _index_lock(path: str):
+    """Cross-process lock so N agents do not all parse and persist the same tree.
+
+    The DB serialises the write, but a 47k-chunk parse is ~5 s of duplicated CPU
+    per agent; the first process builds, the rest wait and then read its index.
+    """
+    if fcntl is None:  # pragma: no cover
+        yield
+        return
+    fd = os.open(path + ".index.lock", os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
+
+
 def _index(root: str) -> RepoIndex:
     root = _authorize_root(root)
     signature = _tree_signature(root)
@@ -155,8 +182,14 @@ def _index(root: str) -> RepoIndex:
     except Exception:
         idx = None
     if idx is None:
-        idx = RepoIndex.build(root, revision=fingerprint)
-        store.save_index(idx)
+        with _index_lock(store.path):
+            try:  # another process may have built it while we waited
+                idx = store.load_index(fingerprint)
+            except Exception:
+                idx = None
+            if idx is None:
+                idx = RepoIndex.build(root, revision=fingerprint)
+                store.save_index(idx)
     if cached is not None and cached.revision != idx.revision:
         _evict_dependents(root)  # stale index/retriever/models must not be served
     _INDEX_CACHE[root] = idx

@@ -25,9 +25,11 @@ from __future__ import annotations
 import json
 import os
 import pickle
+import random
 import re
 import time
 import hashlib
+from contextlib import contextmanager
 
 import numpy as np
 import libsql
@@ -66,6 +68,27 @@ def _blob_to_floats(blob: bytes) -> np.ndarray:
     return np.frombuffer(blob, dtype="<f4").astype(float)
 
 
+_BUSY_MARKERS = ("locked", "busy", "snapshot", "conflict")
+
+
+def _is_busy(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return any(marker in text for marker in _BUSY_MARKERS)
+
+
+def _batched(rows, size: int = 1000):
+    """The binding's ``executemany`` wants a list; batch so a 47k-chunk index
+    does not materialise every row at once."""
+    batch = []
+    for row in rows:
+        batch.append(row)
+        if len(batch) >= size:
+            yield batch
+            batch = []
+    if batch:
+        yield batch
+
+
 class Store:
     """A connection to one repo's libSQL database (with the global DB attached).
 
@@ -81,14 +104,91 @@ class Store:
         url = url or os.environ.get("HARNESS_DB_URL") or f"file:{self.path}"
         auth_token = auth_token or os.environ.get("HARNESS_DB_AUTH_TOKEN", "")
         sync_url = sync_url or os.environ.get("HARNESS_DB_SYNC_URL") or None
-        self.conn = libsql.connect(url, auth_token=auth_token, sync_url=sync_url)
+        self._busy_timeout_s = int(os.environ.get("HARNESS_DB_BUSY_TIMEOUT_MS", "30000")) / 1000
+        self._txn_depth = 0
+        # AUTOCOMMIT: every multi-statement write takes its own BEGIN IMMEDIATE.
+        self.conn = libsql.connect(url, auth_token=auth_token, sync_url=sync_url,
+                                   timeout=self._busy_timeout_s, isolation_level=None)
+        self._local_file = (url.startswith("file:") or "://" not in url) and not sync_url
+        self._configure_connection()
         self._attached_global = False
         self._schema()
         self._attach_global(global_url)
 
+    def _configure_connection(self) -> None:
+        """WAL + a long busy handler: concurrent agents read in parallel and
+        writers queue instead of failing with ``database is locked``."""
+        try:
+            self.conn.execute(f"PRAGMA busy_timeout = {int(self._busy_timeout_s * 1000)}")
+        except Exception:  # pragma: no cover
+            pass
+        if not self._local_file:
+            return
+        sync = (os.environ.get("HARNESS_DB_SYNCHRONOUS") or "FULL").upper()
+        try:
+            self.conn.execute(f"PRAGMA synchronous = "
+                              f"{sync if sync in ('FULL', 'NORMAL') else 'FULL'}")
+        except Exception:  # pragma: no cover
+            pass
+        try:
+            mode = self.conn.execute("PRAGMA journal_mode").fetchall()
+            if not mode or str(mode[0][0]).lower() != "wal":
+                self.conn.execute("PRAGMA journal_mode = WAL").fetchall()
+        except Exception:  # pragma: no cover - e.g. a read-only directory
+            pass
+
+    @contextmanager
+    def _write_txn(self):
+        """One ``BEGIN IMMEDIATE`` write transaction, retried while busy.
+
+        Taking the write lock up front avoids SQLite's non-retryable
+        read-to-write upgrade (``SQLITE_BUSY_SNAPSHOT``) and makes the busy
+        timeout effective across processes.  Re-entrant so callers can compose
+        (``save_encoder`` -> ``save_vectors``).
+        """
+        if self._txn_depth:
+            self._txn_depth += 1
+            try:
+                yield
+            finally:
+                self._txn_depth -= 1
+            return
+        deadline = time.monotonic() + self._busy_timeout_s
+        delay = 0.01
+        while True:
+            try:
+                self.conn.execute("BEGIN IMMEDIATE")
+                break
+            except Exception as exc:
+                if not _is_busy(exc) or time.monotonic() >= deadline:
+                    raise
+                time.sleep(delay * (0.5 + random.random() * 0.5))
+                delay = min(delay * 2, 0.5)
+        self._txn_depth = 1
+        try:
+            yield
+            self.conn.execute("COMMIT")
+        except BaseException:
+            try:
+                self.conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
+        finally:
+            self._txn_depth = 0
+
     # -- schema ----------------------------------------------------------- #
     def _schema(self) -> None:
+        rows = self.conn.execute("PRAGMA user_version").fetchall()
+        if rows and int(rows[0][0] or 0) >= SCHEMA_VERSION:
+            return  # warm open: no DDL, so no write lock on every connection
+        with self._write_txn():
+            self._create_schema()
+            self.conn.execute(f"PRAGMA user_version = {int(SCHEMA_VERSION)}")
+
+    def _create_schema(self) -> None:
         cur = self.conn
+
         cur.execute("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT)")
         cur.execute("""CREATE TABLE IF NOT EXISTS repo(
             id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -120,7 +220,6 @@ class Store:
             query TEXT, outcome TEXT, summary TEXT, vector F32_BLOB(512))""")
         cur.execute("CREATE INDEX IF NOT EXISTS experiences_idx "
                     "ON experiences(libsql_vector_idx(vector))")
-        cur.commit()
 
     def _attach_global(self, global_url: str | None) -> None:
         global_url = global_url or global_db_path()
@@ -128,12 +227,23 @@ class Store:
             os.makedirs(os.path.dirname(global_url), exist_ok=True)
             lit = global_url.replace("'", "''")
             self.conn.execute(f"ATTACH DATABASE 'file:{lit}' AS global")
-            self.conn.execute("""CREATE TABLE IF NOT EXISTS global.pooled_model(
-                kind TEXT PRIMARY KEY, version TEXT, weights BLOB,
-                n INTEGER, metrics TEXT, updated_at REAL)""")
-            self.conn.execute("""CREATE TABLE IF NOT EXISTS global.repo_examples(
-                repo_id TEXT, component TEXT, x BLOB, y REAL, ts REAL)""")
-            self.conn.commit()
+            if self._local_file:
+                try:  # WAL on the shared tier too; readers never block there
+                    mode = self.conn.execute("PRAGMA global.journal_mode").fetchall()
+                    if not mode or str(mode[0][0]).lower() != "wal":
+                        self.conn.execute("PRAGMA global.journal_mode = WAL").fetchall()
+                except Exception:  # pragma: no cover
+                    pass
+            names = {r[0] for r in self.conn.execute(
+                "SELECT name FROM global.sqlite_master WHERE type='table'").fetchall()}
+            missing = {"pooled_model", "repo_examples"} - names
+            if missing:
+                with self._write_txn():
+                    self.conn.execute("""CREATE TABLE IF NOT EXISTS global.pooled_model(
+                        kind TEXT PRIMARY KEY, version TEXT, weights BLOB,
+                        n INTEGER, metrics TEXT, updated_at REAL)""")
+                    self.conn.execute("""CREATE TABLE IF NOT EXISTS global.repo_examples(
+                        repo_id TEXT, component TEXT, x BLOB, y REAL, ts REAL)""")
             self._attached_global = True
         except Exception:  # pragma: no cover - pooling is best effort
             self._attached_global = False
@@ -151,33 +261,38 @@ class Store:
 
     # -- index ------------------------------------------------------------ #
     def save_index(self, index) -> None:
-        c = self.conn
-        for tbl in ("chunks", "symbols", "refs"):
-            c.execute(f"DELETE FROM {tbl}")
-        # Vectors are revision-specific; drop them with the old index so a
-        # re-index can never leave a stale matrix beside fresh chunks.  A bare
-        # DELETE is not enough: libsql's vector index keeps shadow rows behind,
-        # so re-inserting the same rowids then fails.
-        if self._has_table("chunk_vectors"):
-            self._drop_vectors()
-        for ch in index.chunks:
-            c.execute("INSERT INTO chunks(path, symbol, kind, start_line, end_line, "
-                      "content_hash, content) VALUES(?,?,?,?,?,?,?)",
-                      (ch.path, ch.symbol, ch.kind, ch.start_line, ch.end_line,
-                       ch.content_hash, ch.content))
-        c.execute("INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild')")
-        for s in index.symbols:
-            c.execute("INSERT INTO symbols(name, kind, path, start_line, end_line) "
-                      "VALUES(?,?,?,?,?)", (s.name, s.kind, s.path, s.start_line, s.end_line))
-        for name, paths in index.references.items():
-            for p in set(paths):
-                c.execute("INSERT INTO refs(name, path) VALUES(?,?)", (name, p))
-        c.execute("INSERT INTO repo(id, root, revision, updated_at) VALUES(1,?,?,?) "
-                  "ON CONFLICT(id) DO UPDATE SET root=excluded.root, "
-                  "revision=excluded.revision, updated_at=excluded.updated_at",
-                  (index.root, index.revision, time.time()))
-        self.set_meta("files", list(index.files))
-        self.commit()
+        with self._write_txn():
+            c = self.conn
+            for tbl in ("chunks", "symbols", "refs"):
+                c.execute(f"DELETE FROM {tbl}")
+            # Vectors are revision-specific; drop them with the old index so a
+            # re-index can never leave a stale matrix beside fresh chunks.  A bare
+            # DELETE is not enough: libsql's vector index keeps shadow rows behind,
+            # so re-inserting the same rowids then fails.
+            if self._has_table("chunk_vectors"):
+                self._drop_vectors()
+            for batch in _batched(
+                    (ch.path, ch.symbol, ch.kind, ch.start_line, ch.end_line,
+                     ch.content_hash, ch.content) for ch in index.chunks):
+                c.executemany(
+                    "INSERT INTO chunks(path, symbol, kind, start_line, end_line, "
+                    "content_hash, content) VALUES(?,?,?,?,?,?,?)", batch)
+            c.execute("INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild')")
+            for batch in _batched(
+                    (s.name, s.kind, s.path, s.start_line, s.end_line)
+                    for s in index.symbols):
+                c.executemany(
+                    "INSERT INTO symbols(name, kind, path, start_line, end_line) "
+                    "VALUES(?,?,?,?,?)", batch)
+            for batch in _batched(
+                    (name, p) for name, paths in index.references.items()
+                    for p in set(paths)):
+                c.executemany("INSERT INTO refs(name, path) VALUES(?,?)", batch)
+            c.execute("INSERT INTO repo(id, root, revision, updated_at) VALUES(1,?,?,?) "
+                      "ON CONFLICT(id) DO UPDATE SET root=excluded.root, "
+                      "revision=excluded.revision, updated_at=excluded.updated_at",
+                      (index.root, index.revision, time.time()))
+            self.set_meta("files", list(index.files))
 
     def load_index(self, revision: str | None = None):
         from .index import Chunk, RepoIndex, Symbol
@@ -247,14 +362,16 @@ class Store:
         # Recreate rather than DELETE rows: libsql's vector index keeps shadow
         # rows across a DELETE, so re-inserting the same rowids fails with
         # "failed to insert shadow row".  Dropping the table drops the index.
-        self._drop_vectors()
-        self.conn.execute(f"CREATE TABLE chunk_vectors(rowid INTEGER PRIMARY KEY, v F32_BLOB({dim}))")
-        self.conn.execute("CREATE INDEX chunk_vectors_idx ON chunk_vectors(libsql_vector_idx(v))")
-        self.set_meta("dim", dim)
-        for row, vec in enumerate(matrix, start=1):
-            self.conn.execute("INSERT INTO chunk_vectors(rowid, v) VALUES(?, ?)",
-                              (row, _floats_to_blob(vec)))
-        self.commit()
+        with self._write_txn():
+            self._drop_vectors()
+            self.conn.execute(f"CREATE TABLE chunk_vectors(rowid INTEGER PRIMARY KEY, v F32_BLOB({dim}))")
+            self.conn.execute("CREATE INDEX chunk_vectors_idx ON chunk_vectors(libsql_vector_idx(v))")
+            self.set_meta("dim", dim)
+            for batch in _batched(
+                    (row, _floats_to_blob(vec))
+                    for row, vec in enumerate(matrix, start=1)):
+                self.conn.executemany(
+                    "INSERT INTO chunk_vectors(rowid, v) VALUES(?, ?)", batch)
 
     def load_vectors(self, expected_rows: int | None = None) -> np.ndarray | None:
         if not self._has_table("chunk_vectors"):
@@ -302,11 +419,11 @@ class Store:
         vec = np.asarray(vector, dtype=float).ravel()
         if vec.size != 512:
             raise ValueError(f"experience vector must be 512-dim, got {vec.size}")
-        self.conn.execute(
-            "INSERT INTO experiences(task_id, repo_id, revision, query, outcome, "
-            "summary, vector) VALUES(?,?,?,?,?,?,?)",
-            (task_id, repo_id, revision, query, outcome, summary, _floats_to_blob(vec)))
-        self.commit()
+        with self._write_txn():
+            self.conn.execute(
+                "INSERT INTO experiences(task_id, repo_id, revision, query, outcome, "
+                "summary, vector) VALUES(?,?,?,?,?,?,?)",
+                (task_id, repo_id, revision, query, outcome, summary, _floats_to_blob(vec)))
 
     def search_experiences(self, query_vec: np.ndarray, limit: int = 1,
                            exclude_task: str = "") -> list[dict]:
@@ -335,14 +452,15 @@ class Store:
     # -- encoder ---------------------------------------------------------- #
     def save_encoder(self, revision: str, state: dict, matrix: np.ndarray) -> None:
         dim = int(np.asarray(matrix).shape[1]) if np.asarray(matrix).size else 0
-        self.conn.execute("INSERT INTO models(name, revision, version, payload, metrics, updated_at) "
-                          "VALUES('encoder',?,?,?,?,?) "
-                          "ON CONFLICT(name) DO UPDATE SET revision=excluded.revision, "
-                          "version=excluded.version, payload=excluded.payload, "
-                          "metrics=excluded.metrics, updated_at=excluded.updated_at",
-                          (revision, state.get("kind", ""), pickle.dumps(state),
-                           json.dumps({"dim": dim}), time.time()))
-        self.save_vectors(matrix)
+        with self._write_txn():
+            self.conn.execute("INSERT INTO models(name, revision, version, payload, metrics, updated_at) "
+                              "VALUES('encoder',?,?,?,?,?) "
+                              "ON CONFLICT(name) DO UPDATE SET revision=excluded.revision, "
+                              "version=excluded.version, payload=excluded.payload, "
+                              "metrics=excluded.metrics, updated_at=excluded.updated_at",
+                              (revision, state.get("kind", ""), pickle.dumps(state),
+                               json.dumps({"dim": dim}), time.time()))
+            self.save_vectors(matrix)
 
     def load_encoder(self, revision: str, expected_rows: int):
         from .retrieval import encoder_from_state
@@ -368,13 +486,13 @@ class Store:
 
     # -- plan documents --------------------------------------------------- #
     def save_plan(self, root: str, task_id: str, doc: dict) -> None:
-        self.conn.execute(
-            "INSERT INTO plans(task_id, root, doc, version, updated_at) "
-            "VALUES(?,?,?,?,?) ON CONFLICT(task_id) DO UPDATE SET "
-            "root=excluded.root, doc=excluded.doc, version=excluded.version, "
-            "updated_at=excluded.updated_at",
-            (task_id, root, json.dumps(doc), int(doc.get("version") or 1), time.time()))
-        self.commit()
+        with self._write_txn():
+            self.conn.execute(
+                "INSERT INTO plans(task_id, root, doc, version, updated_at) "
+                "VALUES(?,?,?,?,?) ON CONFLICT(task_id) DO UPDATE SET "
+                "root=excluded.root, doc=excluded.doc, version=excluded.version, "
+                "updated_at=excluded.updated_at",
+                (task_id, root, json.dumps(doc), int(doc.get("version") or 1), time.time()))
 
     def load_plan(self, root: str, task_id: str) -> dict | None:
         rows = self.conn.execute(
@@ -388,14 +506,14 @@ class Store:
 
     # -- ledger ----------------------------------------------------------- #
     def append_ledger(self, entry: dict) -> None:
-        self.conn.execute(
-            "INSERT INTO ledger(task_id, component, revision, timestamp, model_name, "
-            "confidence, reason_codes, result, inputs_hash) VALUES(?,?,?,?,?,?,?,?,?)",
-            (entry.get("task_id"), entry.get("component"), entry.get("revision"),
-             entry.get("timestamp"), entry.get("model_name"), entry.get("confidence"),
-             json.dumps(entry.get("reason_codes", [])), json.dumps(entry.get("result", {})),
-             entry.get("inputs_hash", "")))
-        self.commit()
+        with self._write_txn():
+            self.conn.execute(
+                "INSERT INTO ledger(task_id, component, revision, timestamp, model_name, "
+                "confidence, reason_codes, result, inputs_hash) VALUES(?,?,?,?,?,?,?,?,?)",
+                (entry.get("task_id"), entry.get("component"), entry.get("revision"),
+                 entry.get("timestamp"), entry.get("model_name"), entry.get("confidence"),
+                 json.dumps(entry.get("reason_codes", [])), json.dumps(entry.get("result", {})),
+                 entry.get("inputs_hash", "")))
 
     def repo_revision(self) -> str:
         rows = self.conn.execute("SELECT revision FROM repo WHERE id = 1").fetchall()
@@ -423,13 +541,13 @@ class Store:
     # -- model artifacts -------------------------------------------------- #
     def save_model(self, name: str, version: str, obj, metrics: dict | None = None,
                    revision: str = "") -> None:
-        self.conn.execute(
-            "INSERT INTO models(name, revision, version, payload, metrics, updated_at) "
-            "VALUES(?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET "
-            "revision=excluded.revision, version=excluded.version, payload=excluded.payload, "
-            "metrics=excluded.metrics, updated_at=excluded.updated_at",
-            (name, revision, version, pickle.dumps(obj), json.dumps(metrics or {}), time.time()))
-        self.commit()
+        with self._write_txn():
+            self.conn.execute(
+                "INSERT INTO models(name, revision, version, payload, metrics, updated_at) "
+                "VALUES(?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET "
+                "revision=excluded.revision, version=excluded.version, payload=excluded.payload, "
+                "metrics=excluded.metrics, updated_at=excluded.updated_at",
+                (name, revision, version, pickle.dumps(obj), json.dumps(metrics or {}), time.time()))
 
     def load_model(self, name: str):
         rows = self.conn.execute("SELECT payload, version, metrics FROM models WHERE name=?",
@@ -451,14 +569,14 @@ class Store:
         if not self._attached_global:
             return
         try:
-            self.conn.execute(
-                "INSERT INTO global.pooled_model(kind, version, weights, n, metrics, updated_at) "
-                "VALUES(?,?,?,?,?,?) ON CONFLICT(kind) DO UPDATE SET version=excluded.version, "
-                "weights=excluded.weights, n=excluded.n, metrics=excluded.metrics, "
-                "updated_at=excluded.updated_at",
-                (kind, version, pickle.dumps(weights), int(n),
-                 json.dumps(metrics or {}), time.time()))
-            self.conn.commit()
+            with self._write_txn():
+                self.conn.execute(
+                    "INSERT INTO global.pooled_model(kind, version, weights, n, metrics, updated_at) "
+                    "VALUES(?,?,?,?,?,?) ON CONFLICT(kind) DO UPDATE SET version=excluded.version, "
+                    "weights=excluded.weights, n=excluded.n, metrics=excluded.metrics, "
+                    "updated_at=excluded.updated_at",
+                    (kind, version, pickle.dumps(weights), int(n),
+                     json.dumps(metrics or {}), time.time()))
         except Exception:  # pragma: no cover
             pass
 
@@ -468,13 +586,15 @@ class Store:
         if not self._attached_global or len(y) == 0:
             return
         try:
-            self.conn.execute("DELETE FROM global.repo_examples WHERE repo_id=? AND component=?",
-                              (repo_id, component))
-            for xi, yi in zip(np.asarray(X, dtype=float), np.asarray(y, dtype=float)):
-                self.conn.execute("INSERT INTO global.repo_examples(repo_id, component, x, y, ts) "
-                                  "VALUES(?,?,?,?,?)",
-                                  (repo_id, component, _floats_to_blob(xi), float(yi), time.time()))
-            self.conn.commit()
+            rows = ((repo_id, component, _floats_to_blob(xi), float(yi), time.time())
+                    for xi, yi in zip(np.asarray(X, dtype=float), np.asarray(y, dtype=float)))
+            with self._write_txn():
+                self.conn.execute("DELETE FROM global.repo_examples WHERE repo_id=? AND component=?",
+                                  (repo_id, component))
+                for batch in _batched(rows):
+                    self.conn.executemany(
+                        "INSERT INTO global.repo_examples(repo_id, component, x, y, ts) "
+                        "VALUES(?,?,?,?,?)", batch)
         except Exception:  # pragma: no cover
             pass
 
@@ -538,7 +658,8 @@ class Store:
         }
 
     def commit(self) -> None:
-        self.conn.commit()
+        if not self._txn_depth:
+            self.conn.commit()
 
     def close(self) -> None:
         try:

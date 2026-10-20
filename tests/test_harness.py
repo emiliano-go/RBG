@@ -808,6 +808,85 @@ def test_db_index_roundtrip(tmp_path):
     store.close()
 
 
+def test_local_db_opens_in_wal_and_skips_schema_rewrite(tmp_path, monkeypatch):
+    monkeypatch.setenv("HARNESS_DB_ROOT", str(tmp_path / "repos"))
+    monkeypatch.setenv("HARNESS_GLOBAL_DB", str(tmp_path / "global.db"))
+    repo = _db_repo(tmp_path)
+    store = hdb.Store(str(repo))
+    assert store.conn.execute("PRAGMA journal_mode").fetchall()[0][0] == "wal"
+    assert int(store.conn.execute("PRAGMA user_version").fetchall()[0][0]) == hdb.SCHEMA_VERSION
+    store.close()
+
+    def boom(_self):
+        raise AssertionError("schema DDL must not rerun on a warm open")
+
+    monkeypatch.setattr(hdb.Store, "_create_schema", boom)
+    hdb.Store(str(repo)).close()
+
+
+def test_concurrent_agent_writes_do_not_lock(tmp_path, monkeypatch):
+    import subprocess
+
+    monkeypatch.setenv("HARNESS_DB_ROOT", str(tmp_path / "repos"))
+    monkeypatch.setenv("HARNESS_GLOBAL_DB", str(tmp_path / "global.db"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "a.py").write_text("def a():\n    return 1\n")
+    worker = tmp_path / "worker.py"
+    worker.write_text(
+        "import os\n"
+        "from harness import db\n"
+        "store = db.Store(os.environ['TEST_ROOT'])\n"
+        "for i in range(20):\n"
+        "    store.append_ledger({'task_id': f\"{os.environ['TAG']}-{i}\", 'component': 'c'})\n"
+        "store.close()\n")
+    env = dict(os.environ, TEST_ROOT=str(repo),
+               PYTHONPATH=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    procs = [subprocess.Popen([sys.executable, str(worker)], env=dict(env, TAG=f"w{i}"),
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+             for i in range(4)]
+    for proc in procs:
+        _out, err = proc.communicate(timeout=60)
+        assert proc.returncode == 0, err.decode()
+    store = hdb.Store(str(repo))
+    assert store.ledger_count() == 80
+    store.close()
+
+
+def test_index_is_built_once_across_processes(tmp_path, monkeypatch):
+    import subprocess
+
+    monkeypatch.setenv("HARNESS_DB_ROOT", str(tmp_path / "repos"))
+    monkeypatch.setenv("HARNESS_GLOBAL_DB", str(tmp_path / "global.db"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "a.py").write_text("def alpha():\n    return 1\n")
+    (repo / "b.py").write_text("from a import alpha\n\ndef beta():\n    return alpha()\n")
+    counter = tmp_path / "builds.txt"
+    worker = tmp_path / "indexer.py"
+    worker.write_text(
+        "import os\n"
+        "from harness import mcp_server\n"
+        "from harness.index import RepoIndex\n"
+        "orig = RepoIndex.build\n"
+        "def counted(*args, **kwargs):\n"
+        "    with open(os.environ['COUNTER'], 'a') as fh:\n"
+        "        fh.write('build\\n')\n"
+        "    return orig(*args, **kwargs)\n"
+        "RepoIndex.build = counted\n"
+        "mcp_server._index(os.environ['TEST_ROOT'])\n")
+    env = dict(os.environ, TEST_ROOT=str(repo), COUNTER=str(counter),
+               HARNESS_ALLOWED_ROOTS=str(repo),
+               PYTHONPATH=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    procs = [subprocess.Popen([sys.executable, str(worker)], env=env,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+             for _ in range(4)]
+    for proc in procs:
+        _out, err = proc.communicate(timeout=60)
+        assert proc.returncode == 0, err.decode()
+    assert counter.read_text().count("build") == 1
+
+
 def test_db_encoder_reload_matches_fit(tmp_path):
     repo = _db_repo(tmp_path)
     idx = RepoIndex.build(str(repo))

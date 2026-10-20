@@ -44,12 +44,25 @@ Three tiers, in the spec's terms:
 Storage is **libSQL / Turso** (the only supported store). It holds repo chunks,
 dense vectors (ANN index), the execution ledger, and trained model artefacts.
 
+Local databases run in **WAL mode** with a long busy timeout, so several agents
+(say, one MCP server process each) can read the same project in parallel while
+writes queue instead of failing with `database is locked`. Reads are fully
+concurrent; libSQL still serialises writes, so the store keeps write
+transactions short and takes the write lock up front (`BEGIN IMMEDIATE`). The
+first process to see a revision builds and persists the index under a
+cross-process lock; the rest wait briefly and reuse it. Tune with
+`HARNESS_DB_BUSY_TIMEOUT_MS` (default `30000`) and
+`HARNESS_DB_SYNCHRONOUS` (`FULL` by default; `NORMAL` trades power-loss
+durability for fewer fsyncs).
+
 ---
 
 ## MCP tools
 
 Served by `harness/mcp_server.py` (stdio). `root` is always the absolute path
 to a repository; the server indexes it lazily and caches the index per revision.
+The persisted index is shared across processes, so parallel agents on one
+project parse each revision once.
 
 | Tool | Arguments | Returns |
 |---|---|---|
