@@ -1544,6 +1544,22 @@ def test_replay_llm_uses_the_edit_contract():
     assert [(e.path, e.content) for e in edits] == [("a.py", "x = 1\n")]
 
 
+def test_parse_edits_takes_first_object_from_repeated_truncated_reply():
+    # Live reasoning models sometimes echo the object and get cut off mid-copy
+    # (finish_reason=length); the first complete object must still parse.
+    from harness.providers import parse_edits
+    text = ('{"edits": [{"path": "a.py", "content": "x = 1\\n"}]}\n\n'
+            '{"edits": [{"path": "a.py", "content": "x = 1')
+    edits = parse_edits(text)
+    assert [(e.path, e.content) for e in edits] == [("a.py", "x = 1\n")]
+
+
+def test_parse_edits_rejects_a_reply_with_no_json():
+    from harness.providers import parse_edits
+    with pytest.raises(ValueError):
+        parse_edits("I could not complete this task.")
+
+
 def test_replay_example_end_to_end(tmp_path):
     import shutil
     from harness.__main__ import cmd_replay
@@ -1601,3 +1617,110 @@ def test_swebench_retrieval_scores_gold_files(tmp_path):
     assert report["scored"] == 1
     assert report["metrics"]["recall_at_k"] == 1.0
     assert report["results"][0]["gold_files"] == ["target.py"]
+
+
+# -- dynamic PTS ground truth (F2) ------------------------------------------ #
+def test_pts_mutation_injects_probe_before_body():
+    from eval.pts_dynamic import mutate_source
+    src = "def alpha():\n    return 1\n"
+    out = mutate_source(src, "alpha", 1)
+    assert out is not None and "raise RuntimeError(" in out and "rbg-probe" in out
+    assert out.index("raise RuntimeError") < out.index("return 1")
+
+
+def test_pts_mutation_respects_docstring():
+    from eval.pts_dynamic import mutate_source
+    src = 'def alpha():\n    "doc"\n    return 1\n'
+    out = mutate_source(src, "alpha", 1)
+    assert out.index('"doc"') < out.index("raise RuntimeError")
+    assert mutate_source("def alpha(): pass\n", "missing", 1) is None
+
+
+def test_pts_score_selection_uses_dynamic_truth():
+    from eval.pts_dynamic import score_selection
+    tests = [{"test_id": f"t{i}::test_{i}", "symbols": [], "duration": 1.0, "history": []}
+             for i in range(9)]
+    tests[4]["test_id"] = "t4::test_alpha"
+    tests[4]["symbols"] = ["alpha"]
+    probes = [{"symbol": "alpha", "path": "t4.py", "ground_truth_tests": ["t4::test_alpha"]}]
+    out = score_selection(probes, tests, seed=0)
+    assert out["selector"]["mrr"] == 1.0
+    assert out["selector"]["recall@k"] >= out["random"]["recall@k"]
+
+
+# -- cross-encoder non-fallback branch (F5) --------------------------------- #
+def test_cross_encoder_rerank_uses_model_branch(tmp_path):
+    from harness import retrieval_heavy
+    idx = _repo(tmp_path)
+    hits = HybridRetriever(idx).retrieve("beta_helper", limit=5)
+    rr = retrieval_heavy.CrossEncoderReranker()
+    rr.model = object()  # force the non-fallback path without a real runtime
+
+    def fake_score(query, chunk):
+        return 1.0 if (chunk and "beta" in chunk.path) else 0.0
+
+    rr.score = fake_score
+    out = rr.rerank("beta_helper", hits, idx.chunks)
+    assert out and [h.score_type for h in out] == ["cross-encoder"] * len(out)
+    assert out[0].path.endswith("b.py")
+
+
+# -- experience memory is causal (F3) --------------------------------------- #
+def test_experience_memory_causes_resolution(tmp_path):
+    import re
+    from harness import db
+    from harness.retrieval import EXPERIENCE_DIM, experience_encoder
+    from harness.__main__ import FIXED_SHOP
+    root = str(tmp_path / "exp-causal")
+    _make_demo_repo(root)
+    task = "fix the discount calculation so a 10 percent discount applies correctly"
+    store = db.Store(root)
+    store.save_experience(task_id="prior", repo_id="demo", revision="",
+                          query=task, outcome="verified",
+                          summary="plan: edit shop.py\nfiles: shop.py",
+                          vector=experience_encoder(EXPERIENCE_DIM).encode(task))
+    store.close()
+
+    class MemoLLM(ScriptedLLM):
+        """Edits a file only when the recalled experience names it — ignores the
+        retrieval hits, so resolution is caused by the experience, not search."""
+        def edit(self, task, plan, context, diagnostics=""):
+            named = set()
+            for h in context:
+                if h.path == Orchestrator.EXPERIENCE_PATH:
+                    named |= set(re.findall(r"[\w./-]+\.[a-z]+", h.content))
+            return [EditOp("shop.py", FIXED_SHOP)] if "shop.py" in named else []
+
+    on = Orchestrator(root, MemoLLM(), use_experience=True).run(task, task_id="b1")
+    off = Orchestrator(root, MemoLLM(), use_experience=False).run(task, task_id="b2")
+    assert on.success and not off.success
+
+
+def test_patch_head_trains_from_regression_ledger(tmp_path):
+    from harness import db as hdb
+    from harness.verify import Ledger
+    root = tmp_path / "patch-ledger"
+    root.mkdir()
+    (root / "m.py").write_text("def f():\n    return 1\n")
+    (root / "test_m.py").write_text("def test_0():\n    assert f() == 1\n")
+    idx = RepoIndex.build(str(root))
+    store = hdb.Store(str(root))
+    ledger = Ledger(store)
+    for i in range(10):
+        tid = f"t{i}"
+        ledger.record(component="patch_features", task_id=tid, repo_id="r",
+                      revision=idx.revision, model_name="patch-features-v1",
+                      result={"feature_vector": [float(i) / 10.0] * 11})
+        ledger.record(component="test_selector", task_id=tid, repo_id="r",
+                      revision=idx.revision, model_name="test-ranker-heuristic-v1",
+                      result={"changed_symbols": ["f"]})
+        status = "failed" if i % 2 else "passed"
+        ledger.record(component="verifier", task_id=tid, repo_id="r",
+                      revision=idx.revision, model_name="pytest",
+                      result={"outcomes": [{"test_id": f"test_m.py::test_{i}",
+                                            "status": status}]})
+    store.close()
+    models = train_from_ledger(str(root), index=idx)
+    assert models.patch_trained
+    assert models.metrics["patch"]["n"] >= 8
+    assert models.metrics["patch"]["positive_rate"] == 0.5

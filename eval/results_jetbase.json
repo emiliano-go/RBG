@@ -1,6 +1,6 @@
 {
   "repo": "/home/eclipse/Documents/GitHub/jetbase",
-  "revision": "ba2f8ca60a22345f",
+  "revision": "61ba8dad272eb926",
   "files": 169,
   "chunks": 988,
   "symbols": 747,
@@ -21,7 +21,7 @@
       "recall@5": 0.67,
       "recall@10": 0.885,
       "ndcg@10": 0.4332,
-      "latency_ms": 1.017
+      "latency_ms": 2.017
     },
     "grep(terms)": {
       "mrr": 0.4404,
@@ -30,7 +30,7 @@
       "recall@5": 0.78,
       "recall@10": 0.91,
       "ndcg@10": 0.5504,
-      "latency_ms": 2.529
+      "latency_ms": 4.933
     },
     "bm25": {
       "mrr": 0.5143,
@@ -39,7 +39,7 @@
       "recall@5": 0.77,
       "recall@10": 0.915,
       "ndcg@10": 0.6068,
-      "latency_ms": 1.242
+      "latency_ms": 2.01
     },
     "dense": {
       "mrr": 0.4519,
@@ -48,7 +48,7 @@
       "recall@5": 0.605,
       "recall@10": 0.81,
       "ndcg@10": 0.531,
-      "latency_ms": 4.117
+      "latency_ms": 10.044
     },
     "lsi": {
       "mrr": 0.5036,
@@ -57,7 +57,7 @@
       "recall@5": 0.725,
       "recall@10": 0.84,
       "ndcg@10": 0.578,
-      "latency_ms": 0.391
+      "latency_ms": 0.684
     },
     "hybrid": {
       "mrr": 0.8057,
@@ -66,34 +66,34 @@
       "recall@5": 0.965,
       "recall@10": 1.0,
       "ndcg@10": 0.8539,
-      "latency_ms": 2.132
+      "latency_ms": 4.705
     },
     "hybrid+hash": {
-      "mrr": 0.7955,
+      "mrr": 0.793,
       "n": 200,
-      "recall@1": 0.675,
+      "recall@1": 0.67,
       "recall@5": 0.96,
       "recall@10": 1.0,
-      "ndcg@10": 0.8461,
-      "latency_ms": 5.696
+      "ndcg@10": 0.8443,
+      "latency_ms": 15.074
     },
     "hybrid+prf": {
-      "mrr": 0.737,
+      "mrr": 0.738,
       "n": 200,
-      "recall@1": 0.575,
-      "recall@5": 0.965,
+      "recall@1": 0.58,
+      "recall@5": 0.96,
       "recall@10": 1.0,
-      "ndcg@10": 0.8025,
-      "latency_ms": 9.947
+      "ndcg@10": 0.803,
+      "latency_ms": 20.175
     },
     "hybrid+mmr": {
-      "mrr": 0.5026,
+      "mrr": 0.5018,
       "n": 200,
       "recall@1": 0.35,
       "recall@5": 0.725,
       "recall@10": 0.915,
-      "ndcg@10": 0.5957,
-      "latency_ms": 26.397
+      "ndcg@10": 0.595,
+      "latency_ms": 59.751
     }
   },
   "docstring_retrieval": {
@@ -113,7 +113,7 @@
       "recall@5": 1.0,
       "recall@10": 1.0,
       "ndcg@10": 0.9885,
-      "latency_ms": 0.933
+      "latency_ms": 1.933
     },
     "grep(terms)": {
       "mrr": 0.7616,
@@ -122,7 +122,7 @@
       "recall@5": 0.965,
       "recall@10": 0.99,
       "ndcg@10": 0.8182,
-      "latency_ms": 3.905
+      "latency_ms": 6.856
     },
     "bm25": {
       "mrr": 0.8859,
@@ -131,7 +131,7 @@
       "recall@5": 0.97,
       "recall@10": 0.985,
       "ndcg@10": 0.9098,
-      "latency_ms": 2.424
+      "latency_ms": 4.08
     },
     "dense": {
       "mrr": 0.5989,
@@ -140,7 +140,7 @@
       "recall@5": 0.755,
       "recall@10": 0.83,
       "ndcg@10": 0.6514,
-      "latency_ms": 4.197
+      "latency_ms": 8.421
     },
     "lsi": {
       "mrr": 0.7484,
@@ -149,34 +149,34 @@
       "recall@5": 0.885,
       "recall@10": 0.945,
       "ndcg@10": 0.795,
-      "latency_ms": 0.379
+      "latency_ms": 0.602
     },
     "hybrid": {
-      "mrr": 0.8182,
+      "mrr": 0.8157,
       "n": 200,
-      "recall@1": 0.705,
+      "recall@1": 0.7,
       "recall@5": 0.95,
       "recall@10": 0.965,
-      "ndcg@10": 0.8543,
-      "latency_ms": 3.233
+      "ndcg@10": 0.8524,
+      "latency_ms": 5.483
     },
     "hybrid+hash": {
-      "mrr": 0.7615,
+      "mrr": 0.7679,
       "n": 200,
-      "recall@1": 0.645,
+      "recall@1": 0.655,
       "recall@5": 0.9,
-      "recall@10": 0.92,
-      "ndcg@10": 0.7982,
-      "latency_ms": 6.832
+      "recall@10": 0.915,
+      "ndcg@10": 0.8016,
+      "latency_ms": 12.891
     },
     "hybrid+prf": {
-      "mrr": 0.6991,
+      "mrr": 0.7117,
       "n": 200,
-      "recall@1": 0.535,
+      "recall@1": 0.57,
       "recall@5": 0.91,
-      "recall@10": 0.95,
-      "ndcg@10": 0.7604,
-      "latency_ms": 11.596
+      "recall@10": 0.94,
+      "ndcg@10": 0.7668,
+      "latency_ms": 21.747
     },
     "hybrid+mmr": {
       "mrr": 0.7417,
@@ -184,8 +184,8 @@
       "recall@1": 0.645,
       "recall@5": 0.865,
       "recall@10": 0.94,
-      "ndcg@10": 0.7872,
-      "latency_ms": 27.11
+      "ndcg@10": 0.7873,
+      "latency_ms": 57.404
     }
   },
   "nl_retrieval": {
@@ -205,7 +205,7 @@
       "recall@5": 0.0,
       "recall@10": 0.0,
       "ndcg@10": 0.0,
-      "latency_ms": 0.977
+      "latency_ms": 2.098
     },
     "grep(terms)": {
       "mrr": 0.0003,
@@ -214,7 +214,7 @@
       "recall@5": 0.0,
       "recall@10": 0.0,
       "ndcg@10": 0.0,
-      "latency_ms": 3.912
+      "latency_ms": 7.351
     },
     "bm25": {
       "mrr": 0.0005,
@@ -223,7 +223,7 @@
       "recall@5": 0.0,
       "recall@10": 0.0,
       "ndcg@10": 0.0,
-      "latency_ms": 2.042
+      "latency_ms": 3.913
     },
     "dense": {
       "mrr": 0.002,
@@ -232,7 +232,7 @@
       "recall@5": 0.0,
       "recall@10": 0.01,
       "ndcg@10": 0.003,
-      "latency_ms": 4.045
+      "latency_ms": 9.261
     },
     "lsi": {
       "mrr": 0.0079,
@@ -241,52 +241,54 @@
       "recall@5": 0.01,
       "recall@10": 0.03,
       "ndcg@10": 0.0104,
-      "latency_ms": 0.372
+      "latency_ms": 0.64
     },
     "hybrid": {
-      "mrr": 0.0034,
+      "mrr": 0.0049,
       "n": 200,
       "recall@1": 0.0,
-      "recall@5": 0.0,
-      "recall@10": 0.015,
-      "ndcg@10": 0.0051,
-      "latency_ms": 2.895
+      "recall@5": 0.01,
+      "recall@10": 0.02,
+      "ndcg@10": 0.0076,
+      "latency_ms": 5.666
     },
     "hybrid+hash": {
-      "mrr": 0.0031,
+      "mrr": 0.0035,
       "n": 200,
       "recall@1": 0.0,
-      "recall@5": 0.0,
+      "recall@5": 0.005,
       "recall@10": 0.01,
-      "ndcg@10": 0.0033,
-      "latency_ms": 6.485
+      "ndcg@10": 0.0035,
+      "latency_ms": 12.925
     },
     "hybrid+prf": {
-      "mrr": 0.0916,
+      "mrr": 0.0974,
       "n": 200,
-      "recall@1": 0.04,
-      "recall@5": 0.13,
-      "recall@10": 0.19,
-      "ndcg@10": 0.1094,
-      "latency_ms": 10.98
+      "recall@1": 0.045,
+      "recall@5": 0.135,
+      "recall@10": 0.21,
+      "ndcg@10": 0.118,
+      "latency_ms": 22.48
     },
     "hybrid+mmr": {
-      "mrr": 0.003,
+      "mrr": 0.0033,
       "n": 200,
       "recall@1": 0.0,
       "recall@5": 0.005,
       "recall@10": 0.005,
       "ndcg@10": 0.0019,
-      "latency_ms": 26.809
+      "latency_ms": 60.726
     }
   },
   "test_selection": {
     "n_tests": 339,
     "n_changed_symbols": 200,
+    "budget_tests": 113,
     "scores": {
       "selector": {
         "recall@5": 0.9644,
         "recall@10": 1.0,
+        "recall_at_third": 1.0,
         "precision@10": 0.23,
         "mrr": 0.9958,
         "suite_fraction_to_cover_all": 0.0223,
@@ -295,6 +297,7 @@
       "alpha": {
         "recall@5": 0.0241,
         "recall@10": 0.0371,
+        "recall_at_third": 0.3536,
         "precision@10": 0.027,
         "mrr": 0.0476,
         "suite_fraction_to_cover_all": 0.5382,
@@ -303,6 +306,7 @@
       "random": {
         "recall@5": 0.0111,
         "recall@10": 0.0201,
+        "recall_at_third": 0.3415,
         "precision@10": 0.0085,
         "mrr": 0.0345,
         "suite_fraction_to_cover_all": 0.6228,

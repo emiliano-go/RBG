@@ -131,13 +131,7 @@ def score_instance(instance: dict, cache: str, k: int) -> dict:
     return row
 
 
-def run_report(instances: list[dict], cache: str, k: int = 10,
-               progress=None) -> dict:
-    rows = []
-    for i, instance in enumerate(instances, 1):
-        if progress:
-            progress(i, len(instances), instance.get("instance_id", "?"))
-        rows.append(score_instance(instance, cache, k))
+def _report(rows: list[dict], total: int, k: int) -> dict:
     scored = [r for r in rows if "error" not in r]
     n = len(scored)
 
@@ -148,7 +142,7 @@ def run_report(instances: list[dict], cache: str, k: int = 10,
         "dataset": "princeton-nlp/SWE-bench_Lite",
         "split": "test",
         "k": k,
-        "instances": len(rows),
+        "instances": total,
         "scored": n,
         "errors": len(rows) - n,
         "metrics": {"recall_at_k": mean("recall_at_k"),
@@ -156,6 +150,25 @@ def run_report(instances: list[dict], cache: str, k: int = 10,
                     "mrr": mean("mrr")},
         "results": sorted(rows, key=lambda r: r["instance_id"]),
     }
+
+
+def run_report(instances: list[dict], cache: str, k: int = 10,
+               progress=None, seed: list[dict] | None = None,
+               checkpoint=None) -> dict:
+    """Score every instance; ``seed`` rows are reused (resume) and ``checkpoint``
+    is called with the accumulated rows after each new one, so a mid-run kill
+    keeps the instances already scored."""
+    rows = list(seed or [])
+    done = {r["instance_id"] for r in rows}
+    for i, instance in enumerate(instances, 1):
+        if progress:
+            progress(i, len(instances), instance.get("instance_id", "?"))
+        if instance.get("instance_id") in done:
+            continue
+        rows.append(score_instance(instance, cache, k))
+        if checkpoint:
+            checkpoint(_report(rows, len(instances), k))
+    return _report(rows, len(instances), k)
 
 
 def main(argv=None) -> int:
@@ -175,7 +188,24 @@ def main(argv=None) -> int:
     def progress(i, total, iid):
         print(f"[{i}/{total}] {iid}", file=sys.stderr)
 
-    report = run_report(instances, args.cache, args.k, progress=progress)
+    # Resume from a partial --out so a kill (this machine is memory-tight) does
+    # not re-clone and re-index everything already scored.
+    seed = None
+    if args.out and os.path.exists(args.out):
+        try:
+            with open(args.out, encoding="utf-8") as fh:
+                seed = json.load(fh).get("results") or []
+            print(f"resuming, {len(seed)} instances already scored", file=sys.stderr)
+        except (OSError, ValueError):
+            seed = None
+
+    def checkpoint(report):
+        if args.out:
+            with open(args.out, "w", encoding="utf-8") as fh:
+                json.dump(report, fh, indent=2)
+
+    report = run_report(instances, args.cache, args.k, progress=progress,
+                        seed=seed, checkpoint=checkpoint)
     m = report["metrics"]
     print(f"scored {report['scored']}/{report['instances']} (errors {report['errors']})")
     print(f"recall@{args.k}={m['recall_at_k']} recall@1={m['recall_at_1']} mrr={m['mrr']}")

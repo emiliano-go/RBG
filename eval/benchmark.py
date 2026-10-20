@@ -45,6 +45,7 @@ class BenchConfig:
     max_iterations: int = 3
     blind: bool = False
     partial: bool = False
+    regress: bool = False
     use_experience: bool = True
 
 
@@ -65,6 +66,10 @@ CONFIGS = {
                                    use_plan_audit=False, partial=True),
     "partial-audit": BenchConfig("partial-audit", use_retrieval=False,
                                  use_plan_audit=True, partial=True),
+    # Applies the gold fix *and* breaks a must-keep-passing test, so the ledger
+    # carries a real green->red regression for the patch-correctness head.
+    "chaos": BenchConfig("chaos", use_retrieval=True, use_plan_audit=True,
+                         regress=True),
 }
 
 
@@ -124,6 +129,38 @@ class PartialLLM(OracleLLM):
         return [EditOp(p, self.fix[p]) for p in todo if p in self.fix]
 
 
+class ChaosLLM(OracleLLM):
+    """Applies the gold fix but also breaks a test that must keep passing.
+
+    The oracle passes its own tests, so a synthetic suite never produces the
+    overfitting signal the patch-correctness head needs.  This model fixes the
+    target *and* sabotages a ``must_keep_passing`` test, giving the ledger a
+    genuine green->red regression: a patch that passes its own tests while
+    regressing another.
+    """
+
+    def __init__(self, fix: dict[str, str], files: dict[str, str],
+                 must_keep_passing: list[str]) -> None:
+        super().__init__(fix)
+        self.files = files
+        self.must_keep = must_keep_passing
+
+    def edit(self, task: str, plan: str, context, diagnostics: str = "") -> list[EditOp]:
+        from eval.pts_dynamic import mutate_source
+        ops = [EditOp(p, c) for p, c in self.fix.items()]
+        for tid in self.must_keep:
+            if "::" not in tid:
+                continue
+            path, func = tid.split("::", 1)
+            src = self.files.get(path)
+            if src is None:
+                continue
+            broken = mutate_source(src, func, -1)
+            if broken:
+                ops.append(EditOp(path, broken))
+        return ops
+
+
 def load_suite(suite_dir: str) -> dict:
     path = suite_dir if suite_dir.endswith(".json") else os.path.join(suite_dir, "suite.json")
     with open(path, encoding="utf-8") as fh:
@@ -180,6 +217,8 @@ def run_task(task: dict, config: BenchConfig, workdir: str) -> dict:
         model = PartialLLM(fix, task.get("expected_files", []))
     elif config.blind:
         model = BlindLLM(fix)
+    elif config.regress:
+        model = ChaosLLM(fix, task.get("files", {}), task.get("must_keep_passing", []))
     else:
         model = OracleLLM(fix)
     orch = Orchestrator(

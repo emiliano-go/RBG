@@ -24,7 +24,8 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from eval.benchmark import CONFIGS, BlindLLM, OracleLLM, _write_repo, load_suite  # noqa: E402
+from eval.benchmark import (CONFIGS, BlindLLM, ChaosLLM, OracleLLM,  # noqa: E402
+                            _write_repo, load_suite)
 from harness.orchestrator import Orchestrator  # noqa: E402
 from harness.training import train_from_ledger, validate_and_promote  # noqa: E402
 
@@ -42,7 +43,7 @@ def _reset(root: str) -> None:
 
 def farm(suite_dir: str, root: str, configs: tuple[str, ...],
          limit: int | None, quiet: bool = False,
-         experience: bool = True) -> dict:
+         experience: bool = True, live: bool = False) -> dict:
     suite = load_suite(suite_dir)
     tasks = suite["tasks"][:limit] if limit else suite["tasks"]
     os.makedirs(root, exist_ok=True)
@@ -53,19 +54,32 @@ def farm(suite_dir: str, root: str, configs: tuple[str, ...],
             _reset(root)  # another task's broken modules would fail this run
             _write_repo(root, task["files"])
             cfg = CONFIGS[name]
-            model = (BlindLLM(task.get("fix", {})) if cfg.blind
-                     else OracleLLM(task.get("fix", {})))
+            if live:
+                # A real generative model: resolution is genuine, not oracle-known.
+                from harness.providers import OpenAICompatLLM
+                model = OpenAICompatLLM()
+            elif cfg.regress:
+                model = ChaosLLM(task.get("fix", {}), task.get("files", {}),
+                                 task.get("must_keep_passing", []))
+            elif cfg.blind:
+                model = BlindLLM(task.get("fix", {}))
+            else:
+                model = OracleLLM(task.get("fix", {}))
             orch = Orchestrator(
                 root, model,
                 use_retrieval=cfg.use_retrieval, use_reranker=cfg.use_reranker,
                 use_plan_audit=cfg.use_plan_audit, context_limit=cfg.context_limit,
                 max_iterations=cfg.max_iterations, use_experience=experience)
-            report = orch.run(task["task"], task_id=f"farm-{task['id']}-{name}")
+            try:
+                report = orch.run(task["task"], task_id=f"farm-{task['id']}-{name}")
+                success, status = report.success, report.status
+            except Exception as exc:  # a flaky/absent model must not kill the farm
+                success, status = False, f"error:{type(exc).__name__}"
             runs += 1
-            resolved += 1 if report.success else 0
+            resolved += 1 if success else 0
             if not quiet:
                 print(f"{task['id']:40s} {name:14s} "
-                      f"{report.status:10s} success={report.success}")
+                      f"{status:10s} success={success}", flush=True)
 
     models = train_from_ledger(root)
     return {
@@ -94,6 +108,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="allow farming into a non-empty --root (it is wiped per run)")
     ap.add_argument("--no-experience", dest="experience", action="store_false",
                     help="disable experience-memory recall for the A/B")
+    ap.add_argument("--live", action="store_true",
+                    help="drive with the real OpenAI-compatible model (RBG_LLM_*), "
+                         "so resolution is genuine rather than oracle-known")
     args = ap.parse_args(argv)
 
     root = os.path.abspath(args.root) if args.root else tempfile.mkdtemp(prefix="rbg-farm-")
@@ -101,7 +118,7 @@ def main(argv: list[str] | None = None) -> int:
         ap.error(f"refusing to wipe non-empty root {root!r}; pass --force if intended")
     try:
         out = farm(args.suite, root, tuple(args.configs), args.tasks or None,
-                   experience=args.experience)
+                   experience=args.experience, live=args.live)
         verdict = validate_and_promote(root, min_test=args.min_test)
         out["validation"] = verdict
         print(json.dumps(out, indent=2))

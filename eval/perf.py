@@ -138,8 +138,11 @@ def bench_tools(root: str, index: RepoIndex, repeat: int) -> dict:
         "get_calibration": lambda: _call("get_calibration", {"root": root}),
     }
     # warm the caches (index/retriever/models) so the timed calls are steady-state
-    for fn in calls.values():
-        fn()
+    for name, fn in calls.items():
+        res = fn()
+        if res.get("result", {}).get("isError"):
+            text = res["result"]["content"][0]["text"]
+            raise RuntimeError(f"tool {name} errored during warm-up: {text.strip()}")
     out = {}
     for name, fn in calls.items():
         rep = repeat
@@ -172,6 +175,10 @@ def main() -> int:
     ap.add_argument("--out", default="")
     args = ap.parse_args()
     root = os.path.abspath(args.repo)
+    # The MCP tools deny-by-default (HARNESS_ALLOWED_ROOTS); without this the
+    # timed calls all return instant permission errors and every "latency"
+    # reads as a suspicious 0.02 ms.  Authorize just the repo under test.
+    os.environ.setdefault("HARNESS_ALLOWED_ROOTS", root)
     idx = RepoIndex.build(root)
     mcp_server._INDEX_CACHE.clear()
     mcp_server._STORE_CACHE.clear()

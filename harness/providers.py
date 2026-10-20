@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 
@@ -35,12 +36,15 @@ EDIT_SYSTEM = (
 
 class OpenAICompatLLM:
     def __init__(self, model: str | None = None, base_url: str | None = None,
-                 api_key: str | None = None, timeout_s: float = 120.0) -> None:
+                 api_key: str | None = None, timeout_s: float | None = None) -> None:
         self.model = model or os.environ.get("RBG_LLM_MODEL", "gpt-4o-mini")
         self.base_url = (base_url or os.environ.get(
             "RBG_LLM_BASE_URL", "https://api.openai.com/v1")).rstrip("/")
         self.api_key = api_key if api_key is not None else os.environ.get("RBG_LLM_API_KEY", "")
-        self.timeout_s = timeout_s
+        # Reasoning models can take minutes on a full-file edit prompt; 120s
+        # (the old default) timed a live run out.  RBG_LLM_TIMEOUT overrides.
+        self.timeout_s = (timeout_s if timeout_s is not None
+                          else float(os.environ.get("RBG_LLM_TIMEOUT", "120")))
 
     def _chat(self, system: str, user: str) -> str:
         payload = {
@@ -51,15 +55,31 @@ class OpenAICompatLLM:
                 {"role": "user", "content": user},
             ],
         }
+        max_tokens = int(os.environ.get("RBG_LLM_MAX_TOKENS", "0") or 0)
+        if max_tokens:
+            payload["max_tokens"] = max_tokens  # reasoning models spend tokens thinking
         req = urllib.request.Request(
             self.base_url + "/chat/completions",
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json",
                      **({"Authorization": f"Bearer {self.api_key}"} if self.api_key else {})},
         )
-        with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
-            data = json.loads(resp.read())
-        return data["choices"][0]["message"]["content"]
+        # Hosted endpoints drop or rate-limit the occasional request; a live
+        # measurement must not lose a task to one transient failure.
+        last: Exception | None = None
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
+                    data = json.loads(resp.read())
+                return data["choices"][0]["message"]["content"]
+            except urllib.error.HTTPError as exc:
+                last = exc
+                if exc.code not in (429, 500, 502, 503, 504):
+                    raise
+            except (urllib.error.URLError, TimeoutError) as exc:
+                last = exc
+            time.sleep(2 * (attempt + 1))
+        raise last  # type: ignore[misc]
 
     def plan(self, task: str, context: list[Hit]) -> str:
         return self._chat(PLAN_SYSTEM, _render(task, context))
@@ -117,10 +137,16 @@ def parse_edits(text: str) -> list[EditOp]:
     try:
         data = json.loads(payload)
     except json.JSONDecodeError:
-        start, end = payload.find("{"), payload.rfind("}")
-        if start == -1 or end <= start:
+        start = payload.find("{")
+        if start == -1:
             raise ValueError(f"no JSON edits found in model reply: {text[:200]!r}")
-        data = json.loads(payload[start:end + 1])
+        # Take the *first* JSON value from here, not first-brace to last-brace:
+        # models sometimes emit the object more than once, and a truncated
+        # second copy must not poison the parse (``Extra data``).
+        try:
+            data, _ = json.JSONDecoder().raw_decode(payload[start:])
+        except json.JSONDecodeError:
+            raise ValueError(f"no JSON edits found in model reply: {text[:200]!r}")
     items = data.get("edits", data) if isinstance(data, dict) else data
     if not isinstance(items, list):
         raise ValueError(f"edits payload is not a list: {data!r}")

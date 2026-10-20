@@ -59,6 +59,22 @@ def _result_cached(key: tuple, build):
         _RESULT_CACHE.popitem(last=False)
     return val
 
+# Tokenized chunk contents, keyed by content hash.  Tokenizing every test chunk
+# on each call dominated get_change_impact/rank_tests on large repos (~0.5 s per
+# call on a 6.5k-chunk repo); the hash makes a stale entry impossible.
+_TOKENS_CACHE: dict[str, frozenset] = {}
+
+
+def _chunk_tokens(chunk) -> frozenset:
+    toks = _TOKENS_CACHE.get(chunk.content_hash)
+    if toks is None:
+        if len(_TOKENS_CACHE) >= 200_000:  # ponytail: crude cap; LRU if it ever matters
+            _TOKENS_CACHE.clear()
+        toks = frozenset(tokenize(chunk.content))
+        _TOKENS_CACHE[chunk.content_hash] = toks
+    return toks
+
+
 # Advisory read-path budget.  A retrieval result is still returned when the soft
 # budget is exceeded, but it is reported as degraded (and the optional reranker
 # is skipped) so a caller learns the answer was cheap rather than complete.
@@ -345,19 +361,23 @@ def find_symbol(root: str, name: str, exact: bool = False,
 def get_change_impact(root: str, symbols: list[str]) -> dict:
     idx = _index(root)
     learned = _learned(root)
+    # Tokenize each test chunk once, not once per requested symbol: this was the
+    # per-symbol O(chunks x tokens) rescan that dominated the tool's latency.
+    test_chunks = [(c, set(_chunk_tokens(c)))
+                   for c in idx.chunks if "test" in c.path]
     impact: dict[str, dict] = {}
     for sym in symbols:
         callers = idx.callers_of(sym)
-        tests = [c for c in idx.chunks
-                 if "test" in c.path and sym.lower() in set(tokenize(c.content))]
+        low = sym.lower()
+        tests = [(c, toks) for c, toks in test_chunks if low in toks]
         entry = {
             "referenced_in_files": callers,
-            "likely_tests": sorted({c.path for c in tests}),
+            "likely_tests": sorted({c.path for c, _ in tests}),
             "fan_out": len(callers),
         }
         if learned.impact_trained:
-            scored = [(learned.impact.predict(sym, c.path, set(tokenize(c.content)), len(callers)), c.path)
-                      for c in tests]
+            scored = [(learned.impact.predict(sym, c.path, toks, len(callers)), c.path)
+                      for c, toks in tests]
             entry["predicted_affected"] = [
                 {"test": p, "score": round(s, 4)}
                 for s, p in sorted(scored, key=lambda kv: -kv[0])[:10]]
@@ -537,7 +557,7 @@ def rank_tests(root: str, changed_symbols: list[str], limit: int = 20) -> dict:
     for c in idx.chunks:
         if is_test_chunk(c):
             tests.append({"test_id": f"{c.path}::{c.symbol or c.path}", "duration": 1.0,
-                          "history": [], "symbols": sorted(set(tokenize(c.content)) & defined)})
+                          "history": [], "symbols": sorted(set(_chunk_tokens(c)) & defined)})
     ranked = selector.rank(tests, changed_symbols)[: int(limit)]
     return {
         "root": idx.root, "revision": idx.revision, "advisory": True,
