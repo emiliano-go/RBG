@@ -16,6 +16,7 @@ model, the linear :class:`~harness.retrieval.Reranker` is used unchanged.
 
 from __future__ import annotations
 
+import hashlib
 import os
 
 from .retrieval import Hit, Reranker
@@ -31,26 +32,43 @@ def available() -> bool:
 
 
 # One process may build many retrievers (one per suite task/revision); loading
-# the checkpoint is tens of MB from disk, so keep it process-wide.
-_MODELS: dict[str, object] = {}
+# the checkpoint is tens of MB from disk, so keep it process-wide.  Keyed by
+# (path, device) because a CUDA and a CPU instance are different objects.
+_MODELS: dict[tuple[str, str], object] = {}
 
 
-def _load_model(path: str):
-    model = _MODELS.get(path)
+def _resolve_device(device: str | None = None) -> str:
+    """Explicit device > ``RBG_EMBEDDING_DEVICE`` > CUDA when available > CPU."""
+    if device:
+        return device
+    env = os.environ.get("RBG_EMBEDDING_DEVICE", "").strip()
+    if env:
+        return env
+    try:
+        import torch
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    except Exception:
+        return "cpu"
+
+
+def _load_model(path: str, device: str):
+    key = (path, device)
+    model = _MODELS.get(key)
     if model is None:
         from sentence_transformers import SentenceTransformer
-        model = SentenceTransformer(path)
-        _MODELS[path] = model
+        model = SentenceTransformer(path, device=device)
+        _MODELS[key] = model
     return model
 
 
-def encoder(model_path: str | None = None):
+def encoder(model_path: str | None = None, device: str | None = None):
     """A configured :class:`SentenceTransformerEncoder`, or ``None``.
 
     Opt-in: returns nothing unless the ``semantic`` extra is installed *and*
     ``RBG_EMBEDDING_MODEL`` (or ``model_path``) names a checkpoint.  Callers
     then keep the dependency-free LSI/hash encoder, so the default install is
-    unchanged.
+    unchanged.  Runs on CUDA when available unless ``RBG_EMBEDDING_DEVICE``
+    pins a device.
     """
     if not available():
         return None
@@ -58,7 +76,7 @@ def encoder(model_path: str | None = None):
     if not path:
         return None
     try:
-        return SentenceTransformerEncoder(path)
+        return SentenceTransformerEncoder(path, device=device)
     except Exception:
         return None
 
@@ -73,13 +91,20 @@ class SentenceTransformerEncoder:
     """
 
     def __init__(self, model_path: str | None = None, model=None,
-                 batch_size: int = 64, dim: int | None = None) -> None:
+                 batch_size: int = 64, dim: int | None = None,
+                 device: str | None = None) -> None:
         self.model_path = model_path
         self.model = model
-        self.batch_size = batch_size
+        self.batch_size = int(os.environ.get("RBG_EMBEDDING_BATCH", batch_size))
         self.dim = dim
+        self.device = _resolve_device(device)
+        # Embedding cache by content hash: a new revision of the same repo only
+        # re-encodes the files that actually changed (SWE-bench scores dozens of
+        # commits of one repo).  ponytail: crude size cap; LRU if it matters.
+        self._cache: dict[str, object] = {}
+        self._cache_limit = 200_000
         if self.model is None and model_path and available():
-            self.model = _load_model(model_path)
+            self.model = _load_model(model_path, self.device)
 
     def _encode(self, texts: list[str]):
         import numpy as np
@@ -99,7 +124,19 @@ class SentenceTransformerEncoder:
         return self._encode([text])[0]
 
     def document_vectors(self, chunks: list):
-        return self._encode([c.content for c in chunks])
+        import numpy as np
+        if not chunks:
+            return np.zeros((0, self.dim or 1))
+        keys = [getattr(c, "content_hash", None)
+                or hashlib.sha1(c.content.encode("utf-8")).hexdigest() for c in chunks]
+        if len(self._cache) > self._cache_limit:
+            self._cache.clear()
+        missing = [i for i, k in enumerate(keys) if k not in self._cache]
+        if missing:
+            vecs = self._encode([chunks[i].content for i in missing])
+            for i, vec in zip(missing, vecs):
+                self._cache[keys[i]] = vec
+        return np.vstack([self._cache[k] for k in keys])
 
     def rank(self, query: str, chunks: list, limit: int = 50) -> list[tuple[int, float]]:
         import numpy as np
@@ -136,10 +173,12 @@ class CrossEncoderReranker:
     reranker, so a caller never gets a different contract, only a weaker score.
     """
 
-    def __init__(self, model_path: str | None = None, max_len: int = 512) -> None:
+    def __init__(self, model_path: str | None = None, max_len: int = 512,
+                 device: str | None = None) -> None:
         self._fallback = Reranker()
         self.model = None
         self.max_len = max_len
+        self.device = _resolve_device(device)
         if not available():
             return
         path = model_path or os.environ.get("RBG_CROSS_ENCODER", "")
@@ -147,7 +186,7 @@ class CrossEncoderReranker:
             return
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
         self.tok = AutoTokenizer.from_pretrained(path)
-        self.model = AutoModelForSequenceClassification.from_pretrained(path)
+        self.model = AutoModelForSequenceClassification.from_pretrained(path).to(self.device)
         self.model.eval()
 
     def score(self, query: str, chunk) -> float:
@@ -155,6 +194,7 @@ class CrossEncoderReranker:
         with torch.no_grad():
             enc = self.tok(query, chunk.content, truncation=True,
                            max_length=self.max_len, return_tensors="pt")
+            enc = {k: v.to(self.device) for k, v in enc.items()}
             return float(self.model(**enc).logits[0][0])  # ponytail: single logit; task-tuned heads differ
 
     def rerank(self, query: str, hits: list[Hit], chunks: list) -> list[Hit]:

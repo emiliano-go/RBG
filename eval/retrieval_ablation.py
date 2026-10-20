@@ -119,7 +119,11 @@ def main(argv=None) -> int:
     ap.add_argument("--reranker", choices=["none", "heavy"], default="none",
                     help="add a hybrid+cross-encoder mode (needs the semantic extra)")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--device", default="",
+                    help="semantic encoder device (cuda/cpu); empty = auto (CUDA if present)")
     args = ap.parse_args(argv)
+    if args.device:
+        os.environ["RBG_EMBEDDING_DEVICE"] = args.device
     report = run(args.suite_dir, args.k, args.reranker)
     if args.json:
         print(json.dumps(report, indent=2))

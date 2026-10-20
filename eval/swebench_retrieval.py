@@ -180,7 +180,11 @@ def main(argv=None) -> int:
     ap.add_argument("--k", type=int, default=10)
     ap.add_argument("--cache", default=os.path.expanduser("~/.cache/rbg-swebench"))
     ap.add_argument("--out", default="")
+    ap.add_argument("--device", default="",
+                    help="semantic encoder device (cuda/cpu); empty = auto (CUDA if present)")
     args = ap.parse_args(argv)
+    if args.device:
+        os.environ["RBG_EMBEDDING_DEVICE"] = args.device
 
     instances = load_instances(args.instances or None, args.limit)
     print(f"loaded {len(instances)} instances", file=sys.stderr)

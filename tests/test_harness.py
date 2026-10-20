@@ -1692,17 +1692,50 @@ def test_semantic_encoder_ranks_by_embedding():
     assert enc.document_vectors(docs).shape == (3, enc.dim)
 
 
+def test_semantic_encoder_caches_unchanged_chunks():
+    from harness.retrieval_heavy import SentenceTransformerEncoder
+    calls = []
+
+    class CountingModel(_BagModel):
+        def encode(self, texts, **kw):
+            calls.append(list(texts))
+            return super().encode(texts, **kw)
+
+    class C:
+        def __init__(self, content):
+            self.content = content
+            self.content_hash = content
+
+    enc = SentenceTransformerEncoder(model=CountingModel())
+    chunks = [C("alpha"), C("beta")]
+    first = enc.document_vectors(chunks)
+    enc.document_vectors(chunks)
+    assert len(calls) == 1  # second pass served from the hash cache
+    enc.document_vectors([C("alpha"), C("gamma")])
+    assert calls[-1] == ["gamma"]  # only the changed chunk is re-encoded
+    assert np.allclose(enc.document_vectors(chunks), first)
+
+
 def test_heavy_encoder_is_opt_in(monkeypatch):
     from harness import retrieval_heavy
     monkeypatch.delenv("RBG_EMBEDDING_MODEL", raising=False)
     assert retrieval_heavy.encoder() is None
 
 
+def test_encoder_device_resolution(monkeypatch):
+    from harness import retrieval_heavy
+    monkeypatch.setenv("RBG_EMBEDDING_DEVICE", "cuda")
+    assert retrieval_heavy._resolve_device() == "cuda"
+    assert retrieval_heavy._resolve_device("cpu") == "cpu"  # explicit wins
+    monkeypatch.delenv("RBG_EMBEDDING_DEVICE")
+    assert retrieval_heavy._resolve_device() in {"cuda", "cpu"}
+
+
 def test_encoder_from_state_dispatches_semantic_kind(monkeypatch):
     from harness import retrieval_heavy
     from harness.retrieval import encoder_from_state
     monkeypatch.setattr(retrieval_heavy, "available", lambda: True)
-    monkeypatch.setattr(retrieval_heavy, "_load_model", lambda _p: _BagModel())
+    monkeypatch.setattr(retrieval_heavy, "_load_model", lambda _p, _d: _BagModel())
     enc = encoder_from_state({"kind": "sentence-transformer", "model": "fake", "dim": 384},
                              np.zeros((0, 384)))
     assert isinstance(enc, retrieval_heavy.SentenceTransformerEncoder) and enc.dim == 384
