@@ -438,9 +438,22 @@ def expand_query(query: str, bm25: "BM25", chunks: list[Chunk], *,
 
 def encoder_from_state(state: dict, doc_vecs: np.ndarray) -> "DenseEncoder | LSIEncoder":
     """Rebuild a persisted encoder without re-fitting (offline reload)."""
-    if state.get("kind") == "lsi":
+    kind = state.get("kind")
+    if kind == "lsi":
         return LSIEncoder.from_state(state, doc_vecs)
+    if kind == "sentence-transformer":
+        from .retrieval_heavy import SentenceTransformerEncoder
+        return SentenceTransformerEncoder.from_state(state, doc_vecs)
     return DenseEncoder.from_state(state, doc_vecs)
+
+
+def heavy_encoder():
+    """The optional semantic encoder, or ``None`` (import kept out of core)."""
+    try:
+        from .retrieval_heavy import encoder as _encoder
+        return _encoder()
+    except Exception:
+        return None
 
 
 # Fixed width for the experience-memory vector index (harness/db.py).
@@ -511,6 +524,8 @@ class HybridRetriever:
         self.bm25 = lexical or BM25(index.chunks)
         if encoder is not None:
             self.encoder = encoder
+        elif (heavy := heavy_encoder()) is not None:
+            self.encoder = heavy
         elif semantic and len(index.chunks) <= LSI_MAX_CORPUS:
             self.encoder = LSIEncoder(k=lsi_k).fit([c.content for c in index.chunks])
         else:

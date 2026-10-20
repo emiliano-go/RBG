@@ -30,6 +30,102 @@ def available() -> bool:
     return True
 
 
+# One process may build many retrievers (one per suite task/revision); loading
+# the checkpoint is tens of MB from disk, so keep it process-wide.
+_MODELS: dict[str, object] = {}
+
+
+def _load_model(path: str):
+    model = _MODELS.get(path)
+    if model is None:
+        from sentence_transformers import SentenceTransformer
+        model = SentenceTransformer(path)
+        _MODELS[path] = model
+    return model
+
+
+def encoder(model_path: str | None = None):
+    """A configured :class:`SentenceTransformerEncoder`, or ``None``.
+
+    Opt-in: returns nothing unless the ``semantic`` extra is installed *and*
+    ``RBG_EMBEDDING_MODEL`` (or ``model_path``) names a checkpoint.  Callers
+    then keep the dependency-free LSI/hash encoder, so the default install is
+    unchanged.
+    """
+    if not available():
+        return None
+    path = model_path or os.environ.get("RBG_EMBEDDING_MODEL", "")
+    if not path:
+        return None
+    try:
+        return SentenceTransformerEncoder(path)
+    except Exception:
+        return None
+
+
+class SentenceTransformerEncoder:
+    """Dense semantic encoder backed by a sentence-transformers checkpoint.
+
+    Duck-types the encoder slot of :class:`~harness.retrieval.HybridRetriever`
+    (``encode`` / ``document_vectors`` / ``rank`` / ``to_state``).  This is the
+    real embedding the dependency-free hash/LSA encoders stood in for; it is the
+    slot that matters when lexical recall plateaus on vocabulary mismatch.
+    """
+
+    def __init__(self, model_path: str | None = None, model=None,
+                 batch_size: int = 64, dim: int | None = None) -> None:
+        self.model_path = model_path
+        self.model = model
+        self.batch_size = batch_size
+        self.dim = dim
+        if self.model is None and model_path and available():
+            self.model = _load_model(model_path)
+
+    def _encode(self, texts: list[str]):
+        import numpy as np
+        if not texts:
+            return np.zeros((0, self.dim or 1))
+        vecs = self.model.encode(texts, batch_size=self.batch_size,
+                                 normalize_embeddings=True, convert_to_numpy=True)
+        vecs = np.asarray(vecs, dtype=float)
+        if vecs.ndim == 1:
+            vecs = vecs.reshape(1, -1)
+        self.dim = vecs.shape[1]
+        norms = np.linalg.norm(vecs, axis=1, keepdims=True)
+        norms[norms == 0] = 1.0
+        return vecs / norms
+
+    def encode(self, text: str):
+        return self._encode([text])[0]
+
+    def document_vectors(self, chunks: list):
+        return self._encode([c.content for c in chunks])
+
+    def rank(self, query: str, chunks: list, limit: int = 50) -> list[tuple[int, float]]:
+        import numpy as np
+        if not chunks or self.model is None:
+            return []
+        sims = self.document_vectors(chunks) @ self.encode(query)
+        order = np.argsort(-sims)
+        return [(int(i), float(sims[i])) for i in order[:limit] if sims[i] > 0]
+
+    def to_state(self) -> dict:
+        """Model identity + width, so a reload restores the same encoder and the
+        persisted document vectors stay dimensionally compatible."""
+        return {"kind": "sentence-transformer", "model": self.model_path, "dim": self.dim}
+
+    @classmethod
+    def from_state(cls, state: dict, doc_vecs) -> "SentenceTransformerEncoder":
+        model_path = state.get("model")
+        if not model_path or not available():
+            # Persisted by a run that had the extra; this one cannot use it, so
+            # fail loudly and let the caller fall back to the lexical encoder.
+            raise RuntimeError("semantic encoder unavailable in this environment")
+        dim = int(state.get("dim") or (doc_vecs.shape[1] if getattr(doc_vecs, "size", 0) else 0)) or None
+        return cls(model_path, dim=dim)
+
+
+
 class CrossEncoderReranker:
     """Code cross-encoder reranker over the fused candidates.
 

@@ -28,7 +28,7 @@ from .index import RepoIndex, _tree_hash, _tree_signature, chunk_key
 from .models import TestSelector
 from .paths import resolve_within
 from .plan import PlanDocument, PlanEditor, audit_completion, parse_plan, scope_drift
-from .retrieval import FTSBackend, HybridRetriever, LSIEncoder, tokenize
+from .retrieval import FTSBackend, HybridRetriever, LSIEncoder, heavy_encoder, tokenize
 from .training import (LearnedModels, PROMOTION_KEY, read_ledger,
                        train_from_ledger, validate_and_promote)
 from .verify import Sandbox
@@ -186,23 +186,31 @@ def _retriever(root: str) -> HybridRetriever:
     idx = _index(root)
     if idx.root not in _RETRIEVER_CACHE:
         store = _store(idx.root)
-        encoder = None
-        try:
-            encoder = store.load_encoder(idx.revision, len(idx.chunks))
-        except Exception:
-            encoder = None
-        warmed = False
-        if encoder is None:
-            encoder = _warm_lsi(store, idx)
-            warmed = encoder is not None
         lexical = FTSBackend(idx.chunks, store.fts_search)
-        if encoder is not None:
-            retr = HybridRetriever(idx, encoder=encoder, lexical=lexical)
-        else:
-            retr = HybridRetriever(idx, lexical=lexical)
-        if encoder is None or warmed:
+        # An opt-in semantic encoder wins over the persisted lexical one, and is
+        # persisted itself so vector_search queries vectors from the same model.
+        heavy = heavy_encoder()
+        if heavy is not None:
+            retr = HybridRetriever(idx, encoder=heavy, lexical=lexical)
             store.save_encoder(idx.revision, retr.encoder.to_state(),
                                retr.encoder.document_vectors(idx.chunks))
+        else:
+            encoder = None
+            try:
+                encoder = store.load_encoder(idx.revision, len(idx.chunks))
+            except Exception:
+                encoder = None
+            warmed = False
+            if encoder is None:
+                encoder = _warm_lsi(store, idx)
+                warmed = encoder is not None
+            if encoder is not None:
+                retr = HybridRetriever(idx, encoder=encoder, lexical=lexical)
+            else:
+                retr = HybridRetriever(idx, lexical=lexical)
+            if encoder is None or warmed:
+                store.save_encoder(idx.revision, retr.encoder.to_state(),
+                                   retr.encoder.document_vectors(idx.chunks))
         _RETRIEVER_CACHE[idx.root] = retr
     return _RETRIEVER_CACHE[idx.root]
 

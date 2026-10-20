@@ -1665,6 +1665,54 @@ def test_cross_encoder_rerank_uses_model_branch(tmp_path):
     assert out[0].path.endswith("b.py")
 
 
+# -- optional real semantic encoder (F6) ------------------------------------ #
+class _BagModel:
+    """Stand-in sentence-transformers model: counts three marker words."""
+
+    def encode(self, texts, **_kw):
+        rows = []
+        for t in texts:
+            rows.append([float(t.count("alpha")), float(t.count("beta")),
+                         float(t.count("gamma"))])
+        return np.asarray(rows)
+
+
+def test_semantic_encoder_ranks_by_embedding():
+    from harness.retrieval_heavy import SentenceTransformerEncoder
+    enc = SentenceTransformerEncoder(model=_BagModel())
+
+    class C:
+        def __init__(self, content):
+            self.content = content
+
+    docs = [C("beta beta helper"), C("alpha value"), C("gamma")]
+    ranked = enc.rank("alpha", docs, limit=2)
+    assert ranked and ranked[0][0] == 1
+    assert np.isclose(np.linalg.norm(enc.encode("alpha beta")), 1.0)
+    assert enc.document_vectors(docs).shape == (3, enc.dim)
+
+
+def test_heavy_encoder_is_opt_in(monkeypatch):
+    from harness import retrieval_heavy
+    monkeypatch.delenv("RBG_EMBEDDING_MODEL", raising=False)
+    assert retrieval_heavy.encoder() is None
+
+
+def test_encoder_from_state_dispatches_semantic_kind(monkeypatch):
+    from harness import retrieval_heavy
+    from harness.retrieval import encoder_from_state
+    monkeypatch.setattr(retrieval_heavy, "available", lambda: True)
+    monkeypatch.setattr(retrieval_heavy, "_load_model", lambda _p: _BagModel())
+    enc = encoder_from_state({"kind": "sentence-transformer", "model": "fake", "dim": 384},
+                             np.zeros((0, 384)))
+    assert isinstance(enc, retrieval_heavy.SentenceTransformerEncoder) and enc.dim == 384
+    # Without the extra, a persisted semantic encoder must not be silently used.
+    monkeypatch.setattr(retrieval_heavy, "available", lambda: False)
+    with pytest.raises(RuntimeError):
+        encoder_from_state({"kind": "sentence-transformer", "model": "fake", "dim": 384},
+                           np.zeros((0, 384)))
+
+
 # -- experience memory is causal (F3) --------------------------------------- #
 def test_experience_memory_causes_resolution(tmp_path):
     import re

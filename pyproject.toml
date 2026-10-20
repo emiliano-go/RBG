@@ -17,7 +17,7 @@ dependencies = [
 dev = ["pytest"]
 # Optional heavy retriever (harness/retrieval_heavy.py). Not needed for the
 # default numpy-only install; large (torch) so deliberately opt-in.
-semantic = ["transformers", "torch"]
+semantic = ["transformers", "torch", "sentence-transformers"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
