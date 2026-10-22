@@ -364,6 +364,10 @@ class Orchestrator:
                 report.failures = [f"compile: iteration {iteration}"]
             if self.use_plan_audit:
                 parts.append(format_guidance(typed, drift))
+                if drift.extra:
+                    parts.append("Unplanned files changed: "
+                                 + ", ".join(drift.extra)
+                                 + ". Add them to the plan or revert them.")
             diagnostics = "\n".join(p for p in parts if p)
         if drift is not None and drift.missing and self.use_plan_audit:
             report.scope_reductions.append("unmet_plan_steps:" + ",".join(drift.missing))

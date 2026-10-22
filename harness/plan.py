@@ -35,7 +35,21 @@ _TOKEN = re.compile(r"`([^`]+)`|([A-Za-z0-9_][A-Za-z0-9_./\\-]*\.[A-Za-z0-9_]+)"
 
 
 def _norm(path: str) -> str:
-    return path.replace("\\", "/").lstrip("./")
+    return path.replace("\\", "/").removeprefix("./")
+
+
+def _bounded_list(value, limit: int) -> list:
+    """A list field from untrusted JSON, bounded and type-filtered."""
+
+    if not isinstance(value, (list, tuple)):
+        return []
+    return [item for item in value[:limit] if isinstance(item, str)]
+
+
+def _bounded_objects(value, limit: int) -> list:
+    if not isinstance(value, (list, tuple)):
+        return []
+    return [item for item in value[:limit] if isinstance(item, dict)]
 
 
 def _file_candidates(text: str):
@@ -179,6 +193,9 @@ def audit_completion(index, changed_symbols, changed_files, context_files) -> di
 # --------------------------------------------------------------------------- #
 DEPTH_CAP = 5
 STATUS = ("open", "done", "blocked", "dropped")
+MAX_SECTIONS = 5000
+MAX_CHECKS = 200
+MAX_NOTES = 500
 
 
 def _now() -> str:
@@ -194,29 +211,65 @@ class PlanSection:
     notes: list = field(default_factory=list)
     checks: list = field(default_factory=list)
     validation: dict | None = None
+    # Machine-checkable scope. A section without these fields is still
+    # readable, but its drift cannot be proven and the audit says so.
+    files: list = field(default_factory=list)
+    allowed_paths: list = field(default_factory=list)
+    symbols: list = field(default_factory=list)
+    artifacts: list = field(default_factory=list)
+    acceptance: list = field(default_factory=list)
+    intent: str = ""
+    non_goals: list = field(default_factory=list)
+    completed_changes: list = field(default_factory=list)
     children: list = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, d: dict) -> "PlanSection":
         sec = cls(
             id=str(d.get("id") or uuid.uuid4().hex[:12]),
-            title=str(d.get("title") or ""),
-            body=str(d.get("body") or ""),
+            title=str(d.get("title") or "")[:200],
+            body=str(d.get("body") or "")[:20000],
             status=d.get("status") or "open",
-            notes=list(d.get("notes") or []),
-            checks=list(d.get("checks") or []),
+            notes=_bounded_objects(d.get("notes"), MAX_NOTES),
+            checks=_bounded_objects(d.get("checks"), MAX_CHECKS),
             validation=d.get("validation"),
+            files=_bounded_list(d.get("files"), 1000),
+            allowed_paths=_bounded_list(d.get("allowed_paths"), 1000),
+            symbols=_bounded_list(d.get("symbols"), 5000),
+            artifacts=_bounded_list(d.get("artifacts"), 1000),
+            acceptance=_bounded_objects(d.get("acceptance"), 50),
+            intent=str(d.get("intent") or "")[:4000],
+            non_goals=_bounded_list(d.get("non_goals"), 200),
+            completed_changes=_bounded_list(d.get("completed_changes"), 20000),
             children=[cls.from_dict(c) for c in (d.get("children") or [])],
         )
         if sec.status not in STATUS:
             sec.status = "open"
         return sec
 
+    def declared_files(self) -> list[str]:
+        out = set()
+        for value in self.files:
+            path = _norm(str(value).strip())
+            if (not path or path.startswith("/") or path == ".."
+                    or path.startswith("../")):
+                continue
+            out.add(path)
+        return sorted(out)
+
+    def declared_symbols(self) -> set[str]:
+        return {str(s) for s in self.symbols if str(s).strip()}
+
     def to_dict(self) -> dict:
         return {
             "id": self.id, "title": self.title, "body": self.body,
             "status": self.status, "notes": list(self.notes),
             "checks": list(self.checks), "validation": self.validation,
+            "files": list(self.files), "allowed_paths": list(self.allowed_paths),
+            "symbols": list(self.symbols), "artifacts": list(self.artifacts),
+            "acceptance": list(self.acceptance), "intent": self.intent,
+            "non_goals": list(self.non_goals),
+            "completed_changes": list(self.completed_changes),
             "children": [c.to_dict() for c in self.children],
         }
 
@@ -231,7 +284,8 @@ class PlanSection:
         return None
 
     def add_note(self, text: str) -> None:
-        self.notes.append({"ts": _now(), "text": text})
+        self.notes.append({"ts": _now(), "text": str(text)[:4000]})
+        del self.notes[:-MAX_NOTES]
 
 
 @dataclass
@@ -241,6 +295,9 @@ class PlanDocument:
     task_id: str
     version: int = 1
     title: str = ""
+    base_revision: str = ""
+    baseline_changes: list = field(default_factory=list)
+    scope_version: int = 0
     sections: list = field(default_factory=list)
 
     @classmethod
@@ -249,13 +306,27 @@ class PlanDocument:
             id=str(d.get("id") or uuid.uuid4().hex[:12]),
             root=str(d.get("root") or ""), task_id=str(d.get("task_id") or ""),
             version=int(d.get("version") or 1), title=str(d.get("title") or ""),
+            base_revision=str(d.get("base_revision") or ""),
+            baseline_changes=_bounded_list(d.get("baseline_changes"), 20000),
+            scope_version=int(d.get("scope_version") or 0),
             sections=[PlanSection.from_dict(s) for s in (d.get("sections") or [])],
         )
 
     def to_dict(self) -> dict:
         return {"id": self.id, "root": self.root, "task_id": self.task_id,
                 "version": self.version, "title": self.title,
+                "base_revision": self.base_revision,
+                "baseline_changes": list(self.baseline_changes),
+                "scope_version": self.scope_version,
                 "sections": [s.to_dict() for s in self.sections]}
+
+    def iter_sections(self):
+        def walk(sec):
+            yield sec
+            for child in sec.children:
+                yield from walk(child)
+        for section in self.sections:
+            yield from walk(section)
 
     def find(self, section_id: str):
         for s in self.sections:
@@ -306,8 +377,14 @@ class PlanEditor:
         if got:
             got[0].add_note(f"v{self.doc.version}: {what}")
 
+    def _section_count(self) -> int:
+        return sum(1 for _ in self.doc.iter_sections())
+
     def append(self, section: dict) -> PlanSection:
+        if self._section_count() >= MAX_SECTIONS:
+            raise ValueError(f"section cap {MAX_SECTIONS} reached")
         sec = PlanSection.from_dict(section)
+        sec.status = "open"
         self.doc.sections.append(sec)
         sec.add_note(f"v{self.doc.version + 1}: added")
         self.doc.version += 1
@@ -320,7 +397,10 @@ class PlanEditor:
         _, depth, _ = got
         if depth + 1 > DEPTH_CAP:
             raise ValueError(f"depth cap {DEPTH_CAP} exceeded at section {parent_id}")
+        if self._section_count() >= MAX_SECTIONS:
+            raise ValueError(f"section cap {MAX_SECTIONS} reached")
         sec = PlanSection.from_dict(section)
+        sec.status = "open"
         got[0].children.append(sec)
         sec.add_note(f"v{self.doc.version + 1}: attached")
         self.doc.version += 1
@@ -365,7 +445,23 @@ class PlanEditor:
         if "body" in fields:
             sec.body = str(fields["body"])
         if "status" in fields and fields["status"] in STATUS:
+            if fields["status"] == "done":
+                raise ValueError("use plan_complete; status cannot be set to done directly")
             sec.status = fields["status"]
+        if "files" in fields:
+            sec.files = _bounded_list(fields["files"], 1000)
+        if "allowed_paths" in fields:
+            sec.allowed_paths = _bounded_list(fields["allowed_paths"], 1000)
+        if "symbols" in fields:
+            sec.symbols = _bounded_list(fields["symbols"], 5000)
+        if "artifacts" in fields:
+            sec.artifacts = _bounded_list(fields["artifacts"], 1000)
+        if "acceptance" in fields:
+            sec.acceptance = _bounded_objects(fields["acceptance"], 50)
+        if "intent" in fields:
+            sec.intent = str(fields["intent"] or "")[:4000]
+        if "non_goals" in fields:
+            sec.non_goals = _bounded_list(fields["non_goals"], 200)
         self._bump(section_id, "modified")
         return sec
 
@@ -381,8 +477,10 @@ class PlanEditor:
         got = self.doc.find(section_id)
         if not got:
             raise KeyError(f"unknown section: {section_id}")
-        entry = {"name": name, "status": status, "evidence": evidence}
+        entry = {"name": str(name)[:200], "status": str(status)[:32],
+                 "evidence": str(evidence)[:4000]}
         got[0].checks.append(entry)
+        del got[0].checks[:-MAX_CHECKS]
         self._bump(section_id, f"check {name}: {status}")
         return entry
 

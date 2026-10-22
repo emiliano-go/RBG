@@ -20,8 +20,9 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from .index import RepoIndex
-from .models import (FEATURE_NAMES, ChangeImpactModel, ConformalCalibrator,
-                     PatchCorrectnessModel, PlattScaler, Policy, TestSelector)
+from .models import (DRIFT_FEATURE_NAMES, FEATURE_NAMES, ChangeImpactModel,
+                     ConformalCalibrator, DriftModel, PatchCorrectnessModel,
+                     PlattScaler, Policy, TestSelector, drift_features)
 from .retrieval import Reranker, tokenize
 
 # Enough local rows to trust a repo-specific fit; below this the pooled tier
@@ -40,6 +41,7 @@ class LearnedModels:
     reranker: Reranker | None = None
     impact: ChangeImpactModel = field(default_factory=ChangeImpactModel)
     patch: PatchCorrectnessModel = field(default_factory=PatchCorrectnessModel)
+    plan_drift: DriftModel = field(default_factory=DriftModel)
     conformal: ConformalCalibrator = field(default_factory=ConformalCalibrator)
     metrics: dict = field(default_factory=dict)
     drift: dict = field(default_factory=dict)
@@ -357,6 +359,41 @@ def _repo_holdout(model, store, repo_id: str) -> dict:
     return {"n": n, "brier": round(float(np.mean((raw - prior_y) ** 2)), 4)}
 
 
+def drift_examples(entries: list[dict]):
+    """(X, y) for the plan-drift head from logged audits and completions.
+
+    A row is a section audit. Label 1 means the deterministic audit found a
+    blocker for that section or the document; label 0 means it passed. The
+    head learns to rank the ambiguous cases, never to replace the gate.
+    """
+
+    X, y = [], []
+    for entry in entries:
+        if len(y) >= 10000:
+            break
+        if entry.get("component") not in ("plan_drift", "plan"):
+            continue
+        result = entry.get("result") or {}
+        drift = result.get("drift") or {}
+        if not isinstance(drift, dict) or "sections" not in drift:
+            continue
+        version = int(result.get("version") or 0)
+        document = drift
+        for section in drift.get("sections") or ():
+            blocked = bool(
+                section.get("missing")
+                or section.get("acceptance_failures")
+                or section.get("outside_scope")
+                or (section.get("status") == "done" and not section.get("declared_files"))
+            )
+            label = 1.0 if blocked else 0.0
+            X.append(drift_features(section, document, version))
+            y.append(label)
+    if not X:
+        return np.zeros((0, len(DRIFT_FEATURE_NAMES))), np.zeros(0)
+    return np.asarray(X, dtype=float), np.asarray(y, dtype=float)
+
+
 def train_from_ledger(root: str, index: RepoIndex | None = None, store=None) -> LearnedModels:
     root = os.path.abspath(root)
     entries = read_ledger(root)
@@ -442,6 +479,14 @@ def train_from_ledger(root: str, index: RepoIndex | None = None, store=None) -> 
         models.patch = PatchCorrectnessModel().train(px, py)
         models.metrics["patch"] = {"n": len(py),
                                    "positive_rate": round(float(py.mean()), 4)}
+    dx, dy = drift_examples(entries)
+    if len(dy) >= MIN_FIT and len(set(dy.tolist())) > 1:
+        models.plan_drift = DriftModel().train(dx, dy)
+        models.metrics["plan_drift"] = {
+            "n": int(len(dy)),
+            "positive_rate": round(float(dy.mean()), 4),
+            "features": DRIFT_FEATURE_NAMES,
+        }
     # Drift/OOD monitoring over a time-ordered split of the ledger (spec 5.8, 8.3).
     from .drift import drift_report
     models.drift = drift_report(models, entries, feature_names=FEATURE_NAMES).to_dict()

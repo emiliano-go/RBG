@@ -1908,3 +1908,278 @@ def test_patch_head_trains_from_regression_ledger(tmp_path):
     assert models.patch_trained
     assert models.metrics["patch"]["n"] >= 8
     assert models.metrics["patch"]["positive_rate"] == 0.5
+
+
+# -- autonomous plan drift ------------------------------------------------ #
+def _git_repo(tmp_path):
+    import subprocess
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "a.py").write_text("x = 1\n")
+    for cmd in (["git", "init", "-q"],
+                ["git", "config", "user.email", "t@example.org"],
+                ["git", "config", "user.name", "t"],
+                ["git", "add", "-A"],
+                ["git", "commit", "-qm", "init"]):
+        subprocess.run(cmd, cwd=root, check=True)
+    return root
+
+
+def test_plan_section_schema_roundtrip():
+    from harness.plan import PlanSection
+    row = {"title": "x", "files": ["a.py"], "allowed_paths": ["docs/*"],
+           "symbols": ["alpha"], "artifacts": ["out.json"],
+           "acceptance": [{"id": "t", "kind": "check", "name": "pytest"}],
+           "intent": "add alpha", "non_goals": ["beta"]}
+    sec = PlanSection.from_dict(row)
+    again = PlanSection.from_dict(sec.to_dict())
+    assert again.files == ["a.py"]
+    assert again.acceptance[0]["name"] == "pytest"
+    assert again.declared_files() == ["a.py"]
+
+
+def test_git_changed_collects_modified_and_untracked(tmp_path):
+    from harness.diffing import git_changed
+    root = _git_repo(tmp_path)
+    (root / "a.py").write_text("x = 2\n")
+    (root / "b.py").write_text("y = 1\n")
+    changed = git_changed(str(root))
+    assert changed.git is True
+    assert "a.py" in changed.modified
+    assert "b.py" in changed.untracked
+    assert "a.py" in changed.files()
+
+
+def test_plan_audit_blocks_unplanned_file(tmp_path):
+    root = _git_repo(tmp_path)
+    mcp_server._STORE_CACHE.clear()
+    _call("plan_create", {"root": str(root), "task_id": "drift",
+                          "title": "Fix", "sections": [
+                              {"title": "edit a", "files": ["a.py"]}]})
+    (root / "a.py").write_text("x = 2\n")
+    (root / "b.py").write_text("y = 1\n")
+    out = _call("plan_audit", {"root": str(root), "task_id": "drift"})
+    drift = out["result"]["structuredContent"]["drift"]
+    assert drift["verdict"] == "block"
+    assert any(r["code"] == "unplanned_file" for r in drift["blockers"])
+    got = _call("plan_tree", {"root": str(root), "task_id": "drift"})
+    sid = got["result"]["structuredContent"]["tree"]["sections"][0]["id"]
+    comp = _call("plan_complete", {"root": str(root), "task_id": "drift",
+                                   "section_id": sid,
+                                   "validation": {"verdict": "pass", "evidence": "ok"}})
+    assert comp["result"]["structuredContent"]["done"] is False
+
+
+def test_plan_complete_requires_acceptance_evidence(tmp_path):
+    root = _git_repo(tmp_path)
+    mcp_server._STORE_CACHE.clear()
+    _call("plan_create", {"root": str(root), "task_id": "acc", "title": "Fix",
+                          "sections": [{"title": "edit a", "files": ["a.py"],
+                                        "acceptance": [{"id": "tests",
+                                                        "kind": "check",
+                                                        "name": "pytest"}]}]})
+    (root / "a.py").write_text("x = 2\n")
+    sid = _call("plan_tree", {"root": str(root), "task_id": "acc"})[
+        "result"]["structuredContent"]["tree"]["sections"][0]["id"]
+    bad = _call("plan_complete", {"root": str(root), "task_id": "acc",
+                                  "section_id": sid,
+                                  "validation": {"verdict": "pass", "evidence": "ok"}})
+    assert bad["result"]["structuredContent"]["done"] is False
+    _call("plan_check", {"root": str(root), "task_id": "acc", "section_id": sid,
+                         "name": "pytest", "status": "pass", "evidence": "3 passed"})
+    good = _call("plan_complete", {"root": str(root), "task_id": "acc",
+                                   "section_id": sid,
+                                   "validation": {"verdict": "pass", "evidence": "ok"}})
+    assert good["result"]["structuredContent"]["done"] is True
+
+
+def test_drift_model_heuristic_and_training():
+    import numpy as np
+    from harness.models import DRIFT_FEATURE_NAMES, DriftModel, drift_features
+    clean = drift_features({"declared_files": ["a.py"], "status": "open"},
+                           {"blockers": [], "warnings": []}, 1)
+    bad = drift_features({"declared_files": ["a.py"], "missing": ["a.py"],
+                          "status": "done"},
+                         {"blockers": [{"code": "x"}], "warnings": []}, 1)
+    assert clean.shape[0] == len(DRIFT_FEATURE_NAMES)
+    model = DriftModel()
+    assert model.predict(clean) == 0.0
+    assert model.predict(bad) > 0.0
+    X = np.asarray([clean, bad] * 6)
+    y = np.asarray([0.0, 1.0] * 6)
+    model.train(X, y)
+    assert model.trained
+    assert model.predict(bad) > model.predict(clean)
+
+
+def test_drift_examples_learn_from_logged_audits():
+    from harness.training import drift_examples
+    good = {"sections": [{"section_id": "a", "status": "open",
+                          "declared_files": ["a.py"], "missing": [],
+                          "acceptance": [], "acceptance_failures": [],
+                          "declared_symbols": [], "undeclared_symbols": [],
+                          "warnings": []}],
+            "verdict": "ok", "blockers": [], "warnings": []}
+    bad = {"sections": [{"section_id": "a", "status": "done",
+                         "declared_files": ["a.py"], "missing": ["a.py"],
+                         "acceptance": [], "acceptance_failures": [],
+                         "declared_symbols": [], "undeclared_symbols": [],
+                         "warnings": []}],
+           "verdict": "block",
+           "blockers": [{"code": "planned_file_unchanged"}], "warnings": []}
+    entries = [
+        {"component": "plan_drift", "result": {"version": 1, "drift": good}},
+        {"component": "plan_drift", "result": {"version": 1, "drift": bad}},
+    ]
+    X, y = drift_examples(entries)
+    assert X.shape[0] == 2
+    assert y.tolist() == [0.0, 1.0]
+
+
+def test_norm_preserves_dot_directories():
+    from harness.diffing import _norm
+    assert _norm("./.github/workflows/ci.yml") == ".github/workflows/ci.yml"
+    assert _norm(".github/workflows/ci.yml") == ".github/workflows/ci.yml"
+
+
+def test_plan_artifact_path_traversal_is_rejected(tmp_path):
+    from harness.diffing import ChangedSet
+    from harness.plan import PlanEditor
+    from harness.plan_drift import audit_document
+    ed = PlanEditor.create("r", "t", "T", [{
+        "title": "x", "files": ["a.py"],
+        "acceptance": [{"id": "out", "kind": "artifact", "path": "../secret"}]}])
+    report = audit_document(ed.doc, ChangedSet(modified=["a.py"]), str(tmp_path))
+    assert any("artifact missing" in item for item in
+               report["sections"][0]["acceptance_failures"])
+
+
+def test_acceptance_cannot_self_certify():
+    from harness.diffing import ChangedSet
+    from harness.plan import PlanEditor
+    from harness.plan_drift import audit_document
+    ed = PlanEditor.create("r", "t", "T", [{
+        "title": "x", "files": ["a.py"],
+        "acceptance": [{"id": "t", "kind": "check", "name": "pytest",
+                        "status": "pass"}]}])
+    report = audit_document(ed.doc, ChangedSet(modified=["a.py"]), ".")
+    assert report["sections"][0]["acceptance_failures"]
+
+
+def test_baseline_changes_are_not_unplanned(tmp_path):
+    root = _git_repo(tmp_path)
+    (root / "b.py").write_text("dirty = 1\n")          # pre-existing dirt
+    mcp_server._STORE_CACHE.clear()
+    _call("plan_create", {"root": str(root), "task_id": "base", "title": "Fix",
+                          "sections": [{"title": "edit a", "files": ["a.py"]}]})
+    (root / "a.py").write_text("x = 2\n")
+    drift = _call("plan_audit", {"root": str(root), "task_id": "base"})[
+        "result"]["structuredContent"]["drift"]
+    assert drift["verdict"] != "block", drift
+    assert "b.py" not in drift["extra"]
+
+
+def test_scope_change_is_reported(tmp_path):
+    root = _git_repo(tmp_path)
+    mcp_server._STORE_CACHE.clear()
+    _call("plan_create", {"root": str(root), "task_id": "scope", "title": "Fix",
+                          "sections": [{"title": "edit a", "files": ["a.py"]}]})
+    sid = _call("plan_tree", {"root": str(root), "task_id": "scope"})[
+        "result"]["structuredContent"]["tree"]["sections"][0]["id"]
+    out = _call("plan_modify", {"root": str(root), "task_id": "scope",
+                                "section_id": sid, "fields": {"files": ["b.py"]}})
+    assert out["result"]["structuredContent"]["scope_fields"] == ["files"]
+    drift = _call("plan_audit", {"root": str(root), "task_id": "scope"})[
+        "result"]["structuredContent"]["drift"]
+    assert any(r["code"] == "plan_scope_changed" for r in drift["warnings"])
+
+
+def test_git_changed_resolves_option_like_base(tmp_path):
+    from harness.diffing import git_changed
+    root = _git_repo(tmp_path)
+    (root / "a.py").write_text("x = 2\n")
+    changed = git_changed(str(root), "--help")
+    assert changed.git is True
+    assert "a.py" in changed.modified
+
+
+def test_allowed_paths_exempt_matching_changes(tmp_path):
+    from harness.diffing import ChangedSet
+    from harness.plan import PlanEditor
+    from harness.plan_drift import audit_document
+    ed = PlanEditor.create("r", "t", "T", [{
+        "title": "x", "files": ["a.py"], "allowed_paths": ["docs/*"]}])
+    report = audit_document(
+        ed.doc, ChangedSet(modified=["a.py", "docs/guide.md"]), str(tmp_path))
+    assert report["verdict"] != "block", report
+
+
+def test_changed_set_cap_blocks(tmp_path):
+    from harness.diffing import ChangedSet
+    from harness.plan import PlanEditor
+    from harness.plan_drift import MAX_CHANGED_FILES, audit_document
+    ed = PlanEditor.create("r", "t", "T", [{"title": "x", "files": ["a.py"]}])
+    fake = [f"f{i}.py" for i in range(MAX_CHANGED_FILES + 1)]
+    report = audit_document(ed.doc, ChangedSet(modified=fake), str(tmp_path))
+    assert any(r["code"] == "changed_too_large" for r in report["blockers"])
+
+
+def test_no_commit_repo_reports_untracked(tmp_path):
+    import subprocess
+    from harness.diffing import git_changed
+    root = tmp_path / "repo"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    (root / "a.py").write_text("x = 1\n")
+    changed = git_changed(str(root))
+    assert changed.git is True
+    assert "a.py" in changed.untracked
+
+
+def test_artifact_inside_root_passes(tmp_path):
+    from harness.diffing import ChangedSet
+    from harness.plan import PlanEditor
+    from harness.plan_drift import audit_document
+    (tmp_path / "out.json").write_text("{}\n")
+    ed = PlanEditor.create("r", "t", "T", [{
+        "title": "x", "files": ["a.py"],
+        "acceptance": [{"id": "out", "kind": "artifact", "path": "out.json"}]}])
+    report = audit_document(ed.doc, ChangedSet(modified=["a.py"]), str(tmp_path))
+    assert report["sections"][0]["acceptance_failures"] == []
+
+
+def test_plan_complete_blocks_a_missing_planned_file(tmp_path):
+    root = _git_repo(tmp_path)
+    mcp_server._STORE_CACHE.clear()
+    _call("plan_create", {"root": str(root), "task_id": "missing", "title": "Fix",
+                          "sections": [{"title": "edit a", "files": ["a.py"]}]})
+    sid = _call("plan_tree", {"root": str(root), "task_id": "missing"})[
+        "result"]["structuredContent"]["tree"]["sections"][0]["id"]
+    out = _call("plan_complete", {"root": str(root), "task_id": "missing",
+                                  "section_id": sid,
+                                  "validation": {"verdict": "pass", "evidence": "ok"}})
+    assert out["result"]["structuredContent"]["done"] is False
+    assert "planned" in out["result"]["structuredContent"]["validation"]["evidence"]
+
+
+def test_plan_modify_cannot_bypass_completion(tmp_path):
+    root = _git_repo(tmp_path)
+    mcp_server._STORE_CACHE.clear()
+    mcp_server.plan_create(str(root), "bypass", "Fix",
+                           [{"title": "x", "files": ["a.py"]}])
+    sid = mcp_server.plan_tree(str(root), "bypass")["tree"]["sections"][0]["id"]
+    with pytest.raises(ValueError):
+        mcp_server.plan_modify(str(root), "bypass", sid, {"status": "done"})
+
+
+def test_plan_audit_ignores_a_spoofed_changed_list(tmp_path):
+    root = _git_repo(tmp_path)
+    mcp_server._STORE_CACHE.clear()
+    mcp_server.plan_create(str(root), "spoof", "Fix",
+                           [{"title": "x", "files": ["a.py"]}])
+    (root / "a.py").write_text("x = 2\n")
+    (root / "b.py").write_text("y = 1\n")
+    drift = mcp_server.plan_audit(
+        str(root), task_id="spoof", changed_files=["a.py"])["drift"]
+    assert drift["verdict"] == "block"
+    assert any(r["code"] == "unplanned_file" for r in drift["blockers"])

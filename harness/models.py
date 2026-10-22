@@ -571,6 +571,90 @@ class ChangeImpactModel:
         return self
 
 
+
+
+# --------------------------------------------------------------------------- #
+# Plan drift
+# --------------------------------------------------------------------------- #
+DRIFT_FEATURE_NAMES = [
+    "declared_files", "missing_files", "outside_scope_files",
+    "acceptance_items", "acceptance_failures", "declared_symbols",
+    "undeclared_symbols", "section_done", "no_declared_scope",
+    "document_blockers", "document_warnings", "plan_version",
+]
+
+
+def drift_features(section: dict, document: dict, plan_version: int = 1) -> np.ndarray:
+    """Static features for one section's drift audit.
+
+    Deliberately no text model and no package names: the features describe
+    declared scope versus observed changes, which is what a drift head can
+    learn without memorising a repository.
+    """
+
+    section = section or {}
+    document = document or {}
+    declared = len(section.get("declared_files") or ())
+    missing = len(section.get("missing") or ())
+    outside = len(section.get("outside_scope") or ())
+    acceptance = len(section.get("acceptance") or ())
+    acceptance_fail = len(section.get("acceptance_failures") or ())
+    declared_symbols = len(section.get("declared_symbols") or ())
+    undeclared_symbols = len(section.get("undeclared_symbols") or ())
+    warnings = section.get("warnings") or ()
+    return np.asarray([
+        float(declared),
+        float(missing),
+        float(outside),
+        float(acceptance),
+        float(acceptance_fail),
+        float(declared_symbols),
+        float(undeclared_symbols),
+        1.0 if section.get("status") == "done" else 0.0,
+        1.0 if "no_declared_scope" in warnings else 0.0,
+        float(len(document.get("blockers") or ())),
+        float(len(document.get("warnings") or ())),
+        float(plan_version or 0),
+    ], dtype=float)
+
+
+class DriftModel:
+    """Advisory probability that a section departed from its plan.
+
+    It is intentionally not the gate: the deterministic :mod:`harness.plan_drift`
+    checks block first. The head only ranks sections a human or repair loop
+    should look at, and reports its calibrated score separately.
+    """
+
+    def __init__(self, model: GBDT | None = None) -> None:
+        self.model = model
+        self.version = "plan-drift-head-v1"
+
+    @property
+    def trained(self) -> bool:
+        return self.model is not None and self.model.trained
+
+    def train(self, X, y) -> "DriftModel":
+        self.model = GBDT(n_estimators=30, learning_rate=0.2, max_depth=3,
+                          loss="binary").fit(X, y)
+        self.version = "plan-drift-head-gbdt-v1"
+        return self
+
+    def predict(self, features) -> float:
+        if not self.trained:
+            # Untrained heuristic: a section with a missing file or a failed
+            # acceptance item is the shape the deterministic layer blocks.
+            vector = np.asarray(features, dtype=float)
+            if vector.size < len(DRIFT_FEATURE_NAMES):
+                return 0.0
+            missing = vector[DRIFT_FEATURE_NAMES.index("missing_files")]
+            failed = vector[DRIFT_FEATURE_NAMES.index("acceptance_failures")]
+            outside = vector[DRIFT_FEATURE_NAMES.index("outside_scope_files")]
+            return float(min(1.0, 0.6 * (missing > 0) + 0.3 * (failed > 0)
+                             + 0.4 * (outside > 0)))
+        return float(self.model.predict(np.asarray(features, dtype=float).reshape(1, -1))[0])
+
+
 # --------------------------------------------------------------------------- #
 # Patch correctness / overfitting (verified is not the same as correct)
 # --------------------------------------------------------------------------- #

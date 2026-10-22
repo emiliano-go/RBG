@@ -8,3 +8,4 @@ venv/
 *.db-journal
 .totem/
 .DS_Store
+uv.lock

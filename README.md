@@ -77,10 +77,10 @@ project parse each revision once.
 | `get_task_status` | `root`, `task_id` | Status, verified gates, and recorded checks for a task handle. |
 | `propose_patch` | `root`, `path`, `content` | Validates a patch proposal (syntax/shape) and returns the verdict. **Does not apply it.** |
 | `train_models` | `root`, `validate=false` | Trains risk, selector, reranker and impact models from the ledger; returns metrics and calibration state. With `validate=true`, gates the risk head on a held-out Brier/coverage comparison and records the verdict. |
-| `plan_audit` | `root`, `plan_text`, `task=""`, `changed_files`, `task_id` | With `task_id`, returns the stored JSON plan and its status rollup. Otherwise parses free text into steps and computes **scope drift** and a **completeness audit**. Advisory. |
+| `plan_audit` | `root`, `plan_text`, `task=""`, `changed_files`, `task_id` | With `task_id`, runs the stored-plan **drift audit** (declared files, allowed paths, acceptance, unplanned writes and deletions) and returns the plan, rollup, and `drift` verdict. Otherwise parses free text into steps and computes **scope drift** and a **completeness audit**. The deterministic verdict is a gate; the learned head is advisory. |
 | `plan_create` | `root`, `task_id`, `title`, `sections` | Creates the server-owned JSON plan for `(root, task_id)`; versions start at 1. |
 | `plan_append` / `plan_attach` | `root`, `task_id`, `section`, `parent_id` | Appends a top-level section or nests one under an existing section (depth cap 5). |
-| `plan_complete` | `root`, `task_id`, `section_id`, `status`, `evidence`, `validation` | Marks a section complete; the `validation` verdict is the model gate. Completion rolls up to parents. |
+| `plan_complete` | `root`, `task_id`, `section_id`, `status`, `evidence`, `validation` | Marks a section complete only after the automatic drift audit passes. A caller-supplied validation cannot override a deterministic blocker. Completion rolls up to parents. |
 | `plan_modify` / `plan_note` / `plan_check` | `root`, `task_id`, `section_id`, … | Edit fields, add a note, or record a named check on a section. |
 | `plan_get` / `plan_tree` | `root`, `task_id`, `section_id` | Read one section or the whole rollup tree. |
 | `get_calibration` | `root` | Conformal calibration state and training metrics (coverage, ECE, thresholds). Advisory. |
@@ -252,14 +252,51 @@ The checks below are deterministic — no new model, no extra LLM call.
   the repo**. A step with a run/test/verify verb is `verify`, otherwise `edit`.
 - **`scope_drift(plan, changed_files)`** — planned-but-unchanged (`missing`) and
   changed-but-unplanned (`extra`).
+- **`git_changed(root)`** — collects modified, added, deleted, renamed, and
+  untracked paths directly from git, so the audit never trusts the model's own
+  report of what it changed.
+- **`audit_document(doc, changed, root)`** — the hard gate. A declared file
+  that is unchanged, an unplanned write or deletion, a missing or failed
+  acceptance item, or a section marked done without a passing validation
+  blocks. A section that declares no scope at all is reported as unverifiable,
+  not as clean.
+- **`section_validation(...)`** — the validator behind `plan_complete`. It
+  fails on any document-level blocker, so an unplanned write cannot be excused
+  by completing a different section.
+- **`DriftModel`** — an optional GBDT head over the audit features. It runs in
+  shadow, reports `max_score`, and never overrides the deterministic verdict.
 - **`audit_completion(index, changed_symbols, changed_files, context_files)`** —
   callers of changed symbols neither edited nor retrieved. Underscore-private,
   dunder and generic method names (`run`, `to_dict`, `main`, …) are skipped: a
   bare method name collides across the tree, so it carries no task signal.
 - **`format_guidance(plan, drift)`** — repair-loop guidance for missing steps.
 
+Plan sections may declare `files`, `allowed_paths`, `symbols`, `artifacts`,
+`acceptance`, `intent`, and `non_goals`. Old plans without these fields still
+load; their drift is reported as unverifiable rather than assumed clean.
+
+Hardening rules:
+
+- **Baseline at creation.** Files already dirty when the plan is created are
+  recorded and subtracted from "unplanned", so a dirty checkout does not fail
+  every task. They still count toward a planned file's observed change.
+- **Acceptance cannot self-certify.** A `status` field on an acceptance item is
+  ignored. The verdict comes from a recorded check the audit can attribute.
+- **Artifacts must resolve inside the root.** Absolute paths, `..`, and
+  symlinks that leave the root are rejected.
+- **Bounded.** A plan over 5,000 sections or a working tree over 20,000 changed
+  files blocks instead of truncating silently. Ledger rows keep a bounded
+  summary, not the full change set.
+- **Scope edits are visible.** Changing `files`, `allowed_paths`, `symbols`, or
+  `acceptance` increments `scope_version`; the next audit warns
+  `plan_scope_changed`.
+- **No stale completion.** A completed section records the changed set it was
+  completed against; later changes to those files warn
+  `changed_after_completion`.
+
 Public API: `Plan`, `PlanStep`, `Drift`, `parse_plan`, `scope_drift`,
-`audit_completion`, plus `PlanDocument`/`PlanSection`/`PlanEditor` for the
+`audit_completion`, `ChangedSet`, `git_changed`, `audit_document`,
+`section_validation`, plus `PlanDocument`/`PlanSection`/`PlanEditor` for the
 stored document. Exposed as `plan_audit` and the `plan_*` toolset.
 
 ---
