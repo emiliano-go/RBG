@@ -30,7 +30,8 @@ except ImportError:  # pragma: no cover - non-POSIX; DB busy-timeout still guard
 
 from . import db
 from .checks import compile_command, detect, runner_argv
-from .diffing import ChangedSet, content_digest, git_changed, symbols_in
+from .diffing import (ChangedSet, content_digest, git_changed, symbols_in,
+                      workspace_changed)
 from .index import RepoIndex, _tree_hash, _tree_signature, chunk_key
 from .models import TestSelector, drift_features
 from .paths import resolve_within
@@ -452,6 +453,14 @@ def _changed_set(root: str, changed_files: list[str] | None = None) -> ChangedSe
         git = git_changed(root)
         if git.git:
             return git
+    except (OSError, ValueError):
+        pass
+    # Not a checkout itself: a workspace root with one repo per child still
+    # yields a real changed set, so cross-repo drift needs no caller list.
+    try:
+        nested = workspace_changed(root)
+        if nested.git:
+            return nested
     except (OSError, ValueError):
         pass
     if changed_files is not None:

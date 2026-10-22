@@ -103,6 +103,73 @@ def _parse_name_status(text: str) -> tuple[list, list, list, list]:
     return added, modified, deleted, renamed
 
 
+#: A workspace root may hold several checkouts. Bounded so an audit never
+#: turns into a whole-disk scan just because the caller pointed at a big tree.
+MAX_NESTED_REPOS = 64
+
+
+def nested_repos(root: str) -> list[str]:
+    """Immediate child directories that are git checkouts, sorted by name."""
+
+    try:
+        entries = sorted(os.scandir(root), key=lambda e: e.name)
+    except OSError:
+        return []
+    out: list[str] = []
+    for entry in entries:
+        if len(out) >= MAX_NESTED_REPOS:
+            break
+        if entry.name.startswith(".") or not entry.is_dir(follow_symlinks=False):
+            continue
+        if os.path.exists(os.path.join(entry.path, ".git")):
+            out.append(entry.path)
+    return out
+
+
+def workspace_changed(root: str, base: str = "HEAD") -> ChangedSet:
+    """Aggregate changes across the checkouts immediately inside *root*.
+
+    A plan root is often a workspace directory rather than a checkout, with one
+    repo per child (``workspace/repo_1``). Paths are prefixed with the child
+    name so they stay relative to the workspace root, which is also how the
+    plan declares them. Single-repo roots keep using :func:`git_changed`; this
+    is the fallback when no checkout is found at the root itself.
+    """
+
+    repos = nested_repos(root)
+    if not repos:
+        return ChangedSet(git=False, base=base)
+    agg = ChangedSet(base=base)
+    errors: list[str] = []
+    seen = False
+    for repo in repos:
+        part = git_changed(repo, base)
+        if not part.git:
+            continue
+        seen = True
+        name = os.path.basename(repo)
+        prefix = name + "/"
+        if part.error:
+            errors.append(f"{name}: {part.error}")
+        agg.added += [prefix + p for p in part.added]
+        agg.modified += [prefix + p for p in part.modified]
+        agg.deleted += [prefix + p for p in part.deleted]
+        agg.renamed += [(prefix + old, prefix + new) for old, new in part.renamed]
+        agg.untracked += [prefix + p for p in part.untracked]
+    if not seen:
+        return ChangedSet(git=False, base=base)
+    agg.added = sorted(set(agg.added))
+    agg.modified = sorted(set(agg.modified))
+    agg.deleted = sorted(set(agg.deleted))
+    agg.renamed = sorted(set(agg.renamed))
+    agg.untracked = sorted(set(agg.untracked))
+    # A fresh repo with no commits is not a hard error; anything else is.
+    hard = [e for e in errors if not e.endswith("no commit to diff against")]
+    agg.error = ("; ".join(hard)[:200] if hard
+                 else ("no commit to diff against" if errors else ""))
+    return agg
+
+
 def git_changed(root: str, base: str = "HEAD") -> ChangedSet:
     """Tracked and untracked changes relative to *base*."""
 

@@ -1950,6 +1950,58 @@ def test_git_changed_collects_modified_and_untracked(tmp_path):
     assert "a.py" in changed.files()
 
 
+def _workspace_repo(workspace, name):
+    import subprocess
+    root = workspace / name
+    root.mkdir()
+    (root / "a.py").write_text("x = 1\n")
+    (root / "b.py").write_text("y = 1\n")
+    for cmd in (["git", "init", "-q"],
+                ["git", "config", "user.email", "t@example.org"],
+                ["git", "config", "user.name", "t"],
+                ["git", "add", "-A"],
+                ["git", "commit", "-qm", "init"]):
+        subprocess.run(cmd, cwd=root, check=True)
+    return root
+
+
+def test_workspace_changed_aggregates_nested_repos(tmp_path):
+    from harness.diffing import workspace_changed
+    ws = tmp_path / "workspace"
+    ws.mkdir()
+    a = _workspace_repo(ws, "repo_a")
+    b = _workspace_repo(ws, "repo_b")
+    (a / "a.py").write_text("x = 2\n")
+    (b / "b.py").write_text("y = 2\n")
+    (b / "new.py").write_text("z = 1\n")
+    changed = workspace_changed(str(ws))
+    assert changed.git is True
+    assert "repo_a/a.py" in changed.modified
+    assert "repo_b/b.py" in changed.modified
+    assert "repo_b/new.py" in changed.untracked
+
+
+def test_plan_audit_works_across_nested_repos(tmp_path):
+    ws = tmp_path / "workspace"
+    ws.mkdir()
+    a = _workspace_repo(ws, "repo_a")
+    b = _workspace_repo(ws, "repo_b")
+    mcp_server._STORE_CACHE.clear()
+    mcp_server.plan_create(str(ws), "multi", "Fix",
+                           [{"title": "edit a", "files": ["repo_a/a.py"]}])
+    (a / "a.py").write_text("x = 2\n")
+    drift = mcp_server.plan_audit(str(ws), task_id="multi")["drift"]
+    assert drift["verdict"] != "block", drift
+    assert "repo_a/a.py" in drift["changed"]["modified"]
+    # The nested git set still wins over a caller-supplied list.
+    (b / "b.py").write_text("y = 2\n")
+    drift = mcp_server.plan_audit(
+        str(ws), task_id="multi", changed_files=["repo_a/a.py"])["drift"]
+    assert drift["verdict"] == "block"
+    assert any(r["code"] == "unplanned_file" and "repo_b/b.py" in r["detail"]
+               for r in drift["blockers"])
+
+
 def test_plan_audit_blocks_unplanned_file(tmp_path):
     root = _git_repo(tmp_path)
     mcp_server._STORE_CACHE.clear()

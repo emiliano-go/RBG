@@ -254,7 +254,10 @@ The checks below are deterministic — no new model, no extra LLM call.
   changed-but-unplanned (`extra`).
 - **`git_changed(root)`** — collects modified, added, deleted, renamed, and
   untracked paths directly from git, so the audit never trusts the model's own
-  report of what it changed.
+  report of what it changed. When the root is a workspace rather than a
+  checkout, nested checkouts one level down are aggregated with their directory
+  prefix (`repo_1/src/a.py`), so cross-repo drift needs no caller-supplied
+  `changed_files` list.
 - **`audit_document(doc, changed, root)`** — the hard gate. A declared file
   that is unchanged, an unplanned write or deletion, a missing or failed
   acceptance item, or a section marked done without a passing validation
