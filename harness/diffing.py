@@ -9,6 +9,7 @@ instead of treating "no evidence" as "no drift".
 
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
 from dataclasses import dataclass, field
@@ -138,6 +139,27 @@ def git_changed(root: str, base: str = "HEAD") -> ChangedSet:
         base=revision or base,
         error=error,
     )
+
+
+def content_digest(root: str, changed: ChangedSet, per_file: int = 2_000_000) -> str:
+    """A digest of the changed files' contents, bounded per file.
+
+    Two audits with the same path list but different bytes are different
+    states; a path-only set cannot tell them apart.
+    """
+
+    digest = hashlib.sha256()
+    for path in changed.files()[:20000]:
+        digest.update(path.encode("utf-8", "replace"))
+        digest.update(b"\0")
+        full = os.path.join(root, path)
+        try:
+            with open(full, "rb") as handle:
+                digest.update(handle.read(per_file))
+        except OSError:
+            digest.update(b"<missing>")
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 def symbols_in(changed: ChangedSet, index) -> list[str]:

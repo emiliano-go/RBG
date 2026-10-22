@@ -30,7 +30,7 @@ except ImportError:  # pragma: no cover - non-POSIX; DB busy-timeout still guard
 
 from . import db
 from .checks import compile_command, detect, runner_argv
-from .diffing import ChangedSet, git_changed, symbols_in
+from .diffing import ChangedSet, content_digest, git_changed, symbols_in
 from .index import RepoIndex, _tree_hash, _tree_signature, chunk_key
 from .models import TestSelector, drift_features
 from .paths import resolve_within
@@ -543,8 +543,9 @@ def plan_create(root: str, task_id: str, title: str, sections: list | None = Non
     root = _authorize_root(root)
     editor = PlanEditor.create(root, task_id, title, sections or [])
     store = _store(root)
-    editor.doc.base_revision = store.repo_revision()
-    editor.doc.baseline_changes = _changed_set(root).files()
+    changed = _changed_set(root)
+    editor.doc.base_revision = store.repo_revision() or changed.base
+    editor.doc.baseline_changes = changed.files()
     store.save_plan(root, task_id, editor.doc.to_dict())
     _plan_ledger(store, task_id, store.repo_revision(), {"action": "create"})
     return {"root": root, "task_id": task_id, "id": editor.doc.id,
@@ -579,6 +580,7 @@ def plan_complete(root: str, task_id: str, section_id: str,
     if out.get("done"):
         section = doc.find(section_id)[0]
         section.completed_changes = sorted(changed.files())
+        section.completed_digest = content_digest(root, changed)
     store.save_plan(root, task_id, doc.to_dict())
     store.append_ledger({
         "task_id": task_id, "component": "plan",

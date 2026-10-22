@@ -12,7 +12,7 @@ import fnmatch
 import os
 from dataclasses import dataclass, field
 
-from .diffing import ChangedSet, _norm
+from .diffing import ChangedSet, _norm, content_digest
 
 #: Paths the harness writes itself. They are never plan drift.
 _INTERNAL_PREFIXES = (".harness/", "__pycache__/", ".pytest_cache/",
@@ -151,6 +151,9 @@ def audit_document(doc, changed: ChangedSet, root: str,
     blockers: list[Reason] = []
     warnings: list[Reason] = []
 
+    digest = content_digest(root, changed) if any(
+        s.completed_digest for s in doc.iter_sections()
+    ) else ""
     sections = list(doc.iter_sections())
     if len(sections) > MAX_PLAN_SECTIONS:
         blockers.append(Reason(
@@ -200,6 +203,12 @@ def audit_document(doc, changed: ChangedSet, root: str,
                     "changed_after_completion",
                     "files changed after the section was completed: "
                     + ", ".join(after[:10]),
+                    section.id,
+                ))
+            elif section.completed_digest and digest != section.completed_digest:
+                warnings.append(Reason(
+                    "changed_after_completion",
+                    "the recorded content changed after the section was completed",
                     section.id,
                 ))
             verdict = (section.validation or {}).get("verdict")

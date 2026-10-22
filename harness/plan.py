@@ -221,6 +221,7 @@ class PlanSection:
     intent: str = ""
     non_goals: list = field(default_factory=list)
     completed_changes: list = field(default_factory=list)
+    completed_digest: str = ""
     children: list = field(default_factory=list)
 
     @classmethod
@@ -270,6 +271,7 @@ class PlanSection:
             "acceptance": list(self.acceptance), "intent": self.intent,
             "non_goals": list(self.non_goals),
             "completed_changes": list(self.completed_changes),
+            "completed_digest": self.completed_digest,
             "children": [c.to_dict() for c in self.children],
         }
 
