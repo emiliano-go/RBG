@@ -22,6 +22,9 @@ classifiers = [
 dependencies = [
     "numpy",
     "libsql",
+    "model2vec",
+    "tree-sitter",
+    "tree-sitter-language-pack",
 ]
 
 [project.urls]
@@ -29,7 +32,7 @@ Homepage = "https://github.com/emiliano-go/RBG-harness"
 Issues = "https://github.com/emiliano-go/RBG-harness/issues"
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["pytest", "ruff", "mypy", "hypothesis", "pip-audit"]
 # Optional heavy retriever (harness/retrieval_heavy.py). Not needed for the
 # default numpy-only install; large (torch) so deliberately opt-in.
 semantic = ["transformers", "torch", "sentence-transformers"]

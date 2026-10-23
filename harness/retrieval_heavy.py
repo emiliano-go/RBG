@@ -70,6 +70,10 @@ def encoder(model_path: str | None = None, device: str | None = None):
     unchanged.  Runs on CUDA when available unless ``RBG_EMBEDDING_DEVICE``
     pins a device.
     """
+    static = os.environ.get("RBG_STATIC_MODEL", "")
+    if static and not os.environ.get("RBG_EMBEDDING_MODEL"):
+        from .retrieval_static import encoder as static_encoder
+        return static_encoder(static)
     if not available():
         return None
     path = model_path or os.environ.get("RBG_EMBEDDING_MODEL", "")
@@ -182,6 +186,10 @@ class CrossEncoderReranker:
         if not available():
             return
         path = model_path or os.environ.get("RBG_CROSS_ENCODER", "")
+        preset = os.environ.get("RBG_RERANKER", "")
+        if not path and preset:
+            from . import model_registry
+            path = model_registry.resolve(preset) or ""
         if not path:
             return
         from transformers import AutoModelForSequenceClassification, AutoTokenizer

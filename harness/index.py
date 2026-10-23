@@ -26,6 +26,26 @@ GENERATED_SKIP = {
 
 _EXTRA_SKIP_CACHE: tuple[str, frozenset[str]] = ("", frozenset())
 
+# Files that commonly hold credentials are never indexed: retrieval output is
+# fed to an LLM and persisted in the ledger, so a tracked secret must not be
+# reachable through search_code/read_chunk.  Operators can opt back in for a
+# repository that legitimately contains fixtures.
+_SENSITIVE_NAMES = {
+    ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".env",
+    "credentials", "credentials.json", "secrets", "secrets.json",
+    "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519",
+}
+_SENSITIVE_SUFFIXES = (".pem", ".key", ".p12", ".pfx", ".keystore", ".jks")
+
+
+def _sensitive(rel: str) -> bool:
+    if os.environ.get("HARNESS_ALLOW_SENSITIVE", "").lower() in ("1", "true", "yes"):
+        return False
+    name = os.path.basename(rel).lower()
+    return (name in _SENSITIVE_NAMES
+            or name.startswith(".env.")
+            or name.endswith(_SENSITIVE_SUFFIXES))
+
 
 def _extra_skip_dirs() -> frozenset[str]:
     """Operator-supplied directory names to prune (``HARNESS_EXTRA_SKIP_DIRS``).
@@ -124,7 +144,7 @@ class RepoIndex:
                 if os.path.splitext(name)[1] not in TEXT_EXT:
                     continue
                 rel = os.path.relpath(os.path.join(dirpath, name), root)
-                if rel in ignored:
+                if rel in ignored or _sensitive(rel):
                     continue
                 full = os.path.join(dirpath, name)
                 idx.files.append(rel)
@@ -135,7 +155,7 @@ class RepoIndex:
                     continue
                 if name.endswith(".py"):
                     idx._index_python(rel, text)
-                else:
+                elif not idx._index_tree_sitter(rel, text):
                     idx._index_text(rel, text)
         return idx
 
@@ -193,6 +213,28 @@ class RepoIndex:
             self.chunks.append(Chunk(rel, start, end, body, symbol=names[0], kind="constant"))
         rest = [i for i in range(1, len(lines) + 1) if i not in covered and lines[i - 1].strip()]
         self._pack_lines(rel, lines, rest, "module")
+
+    def _index_tree_sitter(self, rel: str, text: str) -> bool:
+        from . import parsers
+        parsed = parsers.parse(rel, text)
+        if parsed is None:
+            return False
+        chunks, symbols, references = parsed
+        for start, end, body, name, kind in chunks:
+            self.chunks.append(Chunk(rel, start, end, body, symbol=name, kind=kind))
+        for name, kind, start, end in symbols:
+            self.symbols.append(Symbol(name, kind, rel, start, end))
+        for name, paths in references.items():
+            self.references.setdefault(name, []).extend(paths)
+        covered = set()
+        for start, end, _body, _name, _kind in chunks:
+            covered.update(range(start, end + 1))
+        lines = text.splitlines()
+        rest = [i for i in range(1, len(lines) + 1)
+                if i not in covered and lines[i - 1].strip()]
+        if rest:
+            self._pack_lines(rel, lines, rest, "module")
+        return True
 
     def _index_text(self, rel: str, text: str) -> None:
         lines = text.splitlines()

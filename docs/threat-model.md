@@ -21,6 +21,8 @@ a deterministic gate.
 | Model output → edits | Every edit path goes through `resolve_within`; writes land in a disposable git worktree, and the caller's checkout is never mutated. | `harness/workspace.py`, `harness/orchestrator.py` |
 | Command → OS | A required isolation backend (`bwrap`, then `nsjail`), probed once with a trivial command; commands run argv-only (`shell=False`). | `harness/isolation.py`, `harness/verify.py` |
 | Parent env → child | Allowlist only (`PATH`, `HOME`, `LANG`, temp vars, `LC_*`, `PYTHON*`), never a denylist; extend deliberately with `HARNESS_ENV_ALLOW`. | `harness/verify.py` |
+| Model artifact → process | Persisted models/encoders are hash-checked and decoded by a whitelist unpickler; an unsigned or tampered artifact is a miss, never executed. | `harness/persist.py`, `harness/db.py` |
+| Repo files → context | Credential-shaped files (`.env*`, `*.pem`, `*.key`, `id_rsa*`, credential JSON) are never indexed unless `HARNESS_ALLOW_SENSITIVE=1`. | `harness/index.py` |
 | Evidence → status | `verified` is derived from recorded command results, never from `all([])`. An unisolated run can never be `verified`. | `harness/status.py` |
 
 ## Adversaries considered

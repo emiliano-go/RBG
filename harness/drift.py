@@ -21,7 +21,6 @@ falls back conservatively.  Thresholds are deliberately simple and inspectable.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -77,6 +76,7 @@ class DriftReport:
     max_psi: float = 0.0
     calibration_delta: float | None = None
     ood_rate: float = 0.0
+    exchangeability_log10: float | None = None
     n_reference: int = 0
     n_recent: int = 0
 
@@ -89,6 +89,8 @@ class DriftReport:
             "calibration_delta": (None if self.calibration_delta is None
                                   else round(self.calibration_delta, 4)),
             "ood_rate": round(self.ood_rate, 4),
+            "exchangeability_log10": (None if self.exchangeability_log10 is None
+                                      else round(self.exchangeability_log10, 4)),
             "n_reference": self.n_reference,
             "n_recent": self.n_recent,
         }
@@ -120,6 +122,28 @@ def ood_rate(conformal, rows, threshold: float | None = None) -> float:
         threshold = float(np.percentile(d, 95)) if d.size else 0.0
     flagged = sum(1 for r in rows if conformal.ood_score(r) > threshold)
     return flagged / len(rows)
+
+
+def conformal_martingale(cal_scores, test_scores) -> float:
+    """Exchangeability test martingale from split-conformal p-values.
+
+    Under exchangeability the p-values are (super)uniform and ``2p`` has mean 1,
+    so the product is a non-negative martingale.  A value far above 1 is
+    evidence that the recent window no longer resembles the calibration window.
+    """
+    cal = np.asarray(cal_scores, dtype=float)
+    test = np.asarray(test_scores, dtype=float)
+    if cal.size == 0 or test.size == 0:
+        return 1.0
+    m = 1.0
+    for score in test[:500]:
+        p = (1.0 + float(np.sum(cal >= score))) / (len(cal) + 1.0)
+        m *= min(1e6, 2.0 * p)
+        if m > 1e300:
+            return float("inf")
+    # Both directions matter: a run of unusually small p-values shrinks the
+    # product, so report the larger deviation from the null value 1.
+    return float(max(m, 1.0 / m)) if m > 0 else float("inf")
 
 
 def calibration_drift(ref_scores, ref_labels, cur_scores, cur_labels) -> float:
@@ -174,6 +198,13 @@ def drift_report(learned, entries: list[dict], *, feature_names: list[str],
         if rep.ood_rate > 0.3 and rep.verdict != DRIFTED:
             rep.verdict = WARNING
             rep.reason_codes.append("ood_rate")
+        cal = getattr(learned.conformal, "cal_scores", None)
+        if cal is not None and len(cal):
+            m = conformal_martingale(cal, raw_cur)
+            rep.exchangeability_log10 = float(np.log10(max(m, 1e-300)))
+            if rep.exchangeability_log10 > 3 and rep.verdict != DRIFTED:
+                rep.verdict = WARNING
+                rep.reason_codes.append("exchangeability_violation")
     if not rep.reason_codes:
         rep.reason_codes.append("no_drift_detected")
     return rep

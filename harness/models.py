@@ -484,6 +484,7 @@ class ConformalCalibrator:
         self.base = base or PlattScaler()
         self.alpha = alpha
         self.qhat: float | None = None
+        self.cal_scores: np.ndarray | None = None
         self.train_matrix: np.ndarray | None = None
         self.fitted = False
         self.version = "conformal-platt-v2"
@@ -495,6 +496,7 @@ class ConformalCalibrator:
         p = np.array([self.base(s) for s in raw])
         s_true = np.where(y > 0.5, p, 1.0 - p)
         n = len(s_true)
+        self.cal_scores = s_true
         if n:
             q = min(1.0, math.ceil((n + 1) * (1.0 - self.alpha)) / n)
             self.qhat = float(np.quantile(s_true, q))

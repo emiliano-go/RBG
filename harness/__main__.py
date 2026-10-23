@@ -173,6 +173,28 @@ def cmd_install(args) -> int:
     return 0
 
 
+def cmd_model_artifacts(args) -> int:
+    from . import model_registry
+    if args.action == "demo":
+        cmd_models()
+        return 0
+    if args.action == "list":
+        print(json.dumps(model_registry.list_models(), indent=2))
+        return 0
+    if not args.name:
+        print("error: NAME is required for pull/verify/path", file=sys.stderr)
+        return 1
+    if args.action == "pull":
+        print(model_registry.pull(args.name))
+        return 0
+    if args.action == "verify":
+        verdict = model_registry.verify(args.name)
+        print(json.dumps(verdict, indent=2))
+        return 0 if verdict["ok"] else 1
+    print(model_registry.model_dir(args.name))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] in ("eval", "compare"):
@@ -185,7 +207,12 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("root")
         if name == "retrieve":
             p.add_argument("query")
-    sub.add_parser("models")
+    p = sub.add_parser("models", help="learned-model demo, or pulled model artifacts")
+    p.add_argument("action", nargs="?", default="demo",
+                   choices=["demo", "list", "pull", "verify", "path"])
+    p.add_argument("name", nargs="?")
+    p = sub.add_parser("verify-ledger", help="recompute the execution ledger hash chain")
+    p.add_argument("root")
     p = sub.add_parser("validate-models")
     p.add_argument("root")
     p.add_argument("--min-test", type=int, default=20)
@@ -212,7 +239,16 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "retrieve":
         cmd_retrieve(args.root, args.query)
     elif args.cmd == "models":
-        cmd_models()
+        return cmd_model_artifacts(args)
+    elif args.cmd == "verify-ledger":
+        from .db import Store
+        store = Store(args.root)
+        try:
+            verdict = store.verify_ledger()
+        finally:
+            store.close()
+        print(json.dumps(verdict, indent=2))
+        return 0 if verdict["ok"] else 1
     elif args.cmd == "validate-models":
         from .training import validate_and_promote
         verdict = validate_and_promote(args.root, min_test=args.min_test)

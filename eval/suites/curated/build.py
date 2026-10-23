@@ -1471,7 +1471,7 @@ def check() -> int:
             buggy = _run(root)
             for test_id in task["must_keep_passing"]:
                 node = test_id.split("::")[-1]
-                if buggy.returncode != 0 and f"FAILED" in buggy.stdout and node in buggy.stdout:
+                if buggy.returncode != 0 and "FAILED" in buggy.stdout and node in buggy.stdout:
                     failures.append(f"{task['id']}: guard test fails on buggy code")
             main = task["expect_pass"][0]
             node, test_file = main.split("::")[-1], main.split("::")[0]

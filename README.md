@@ -391,8 +391,9 @@ mcp_main.py       stdio launcher for the MCP server
 
 ## Quickstart
 
-Requires Python 3.12+ and [libSQL](https://github.com/tursodatabase/libsql)
-(`pip install libsql`); only `numpy` is needed beyond that.
+Requires Python 3.12+. The base install is CPU-only and offline-capable:
+`numpy`, `libsql`, `model2vec` (static code embeddings), and `tree-sitter`
+(polyglot symbols). No torch and no network calls at query time.
 
 ```bash
 # install the package and register the MCP server (see Install above)
@@ -405,6 +406,10 @@ rbg demo
 # run a recorded session model (no API key) end-to-end on a real failing test
 rbg replay examples/replay examples/replay/transcript.json \
   "fix median so even-length lists average the two middle values"
+
+# optional: pull a pinned CPU code encoder once, then run offline
+rbg models pull potion-code
+export RBG_STATIC_MODEL="$HOME/.local/share/harness/models/potion-code"
 
 # index a repo and retrieve context
 rbg index /path/to/repo
@@ -465,6 +470,40 @@ gives it the drift feedback that names the remaining files. On the 8
 multi-file tasks the former resolves 0/8 and the latter 8/8.
 
 ---
+
+## Model presets
+
+Every model is optional and selected by environment; the deterministic path is
+unchanged when none is configured.
+
+| Preset | Env | Notes |
+|---|---|---|
+| `potion-code` | `RBG_STATIC_MODEL=<path>` | 16M static code encoder, CPU, no torch. |
+| `code-rank` | `RBG_EMBEDDING_PRESET=code-rank` | CodeRankEmbed 137M, needs `[semantic]`. |
+| `gte-reranker` | `RBG_RERANKER=gte-reranker` | ModernBERT code reranker, needs `[semantic]`. |
+
+Pull and verify artifacts explicitly:
+
+```bash
+rbg models list
+rbg models pull potion-code
+rbg models verify potion-code
+```
+
+Semantic/torch presets still install with `pip install 'rbg-harness[semantic]'`.
+Hosted embeddings (Voyage-code-4, Cohere, Gemini) are deliberately not wired
+in: they would send repository source to a provider.
+
+## Evaluation gates
+
+Before changing a default encoder or reranker, measure it:
+
+```bash
+python -m eval.core_bench --repo /path/to/repo --data core_bench.jsonl --out cand.json
+python -m eval.swe_rebench --repo /path/to/repo --data swe_rebench.jsonl --out cand.json
+python -m eval.repobench --repo /path/to/repo --data mined_prs.jsonl --out cand.json
+python -m eval.model_gate --baseline base.json --candidate cand.json
+```
 
 ## Status
 

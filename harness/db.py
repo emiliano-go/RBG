@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import json
 import os
-import pickle
 import random
 import re
 import time
@@ -34,7 +33,9 @@ from contextlib import contextmanager
 import numpy as np
 import libsql
 
-SCHEMA_VERSION = 1
+from . import persist
+
+SCHEMA_VERSION = 2
 GLOBAL_DB = os.path.join(os.path.expanduser("~"), ".local", "share", "harness", "global.db")
 
 
@@ -205,7 +206,13 @@ class Store:
         cur.execute("""CREATE TABLE IF NOT EXISTS ledger(
             id INTEGER PRIMARY KEY, task_id TEXT, component TEXT, revision TEXT,
             timestamp TEXT, model_name TEXT, confidence REAL, reason_codes TEXT,
-            result TEXT, inputs_hash TEXT)""")
+            result TEXT, inputs_hash TEXT, prev_hash TEXT, hash TEXT)""")
+        # Databases created before the chain existed get the columns here.
+        for column in ("prev_hash", "hash"):
+            try:
+                cur.execute(f"ALTER TABLE ledger ADD COLUMN {column} TEXT")
+            except Exception:  # noqa: BLE001 - already present
+                pass
         cur.execute("""CREATE TABLE IF NOT EXISTS plans(
             task_id TEXT PRIMARY KEY, root TEXT, doc TEXT, version INTEGER,
             updated_at REAL)""")
@@ -453,23 +460,42 @@ class Store:
     # -- encoder ---------------------------------------------------------- #
     def save_encoder(self, revision: str, state: dict, matrix: np.ndarray) -> None:
         dim = int(np.asarray(matrix).shape[1]) if np.asarray(matrix).size else 0
+        payload, digest = persist.dump(state)
+        metrics = {"dim": dim, "artifact_sha256": digest}
         with self._write_txn():
             self.conn.execute("INSERT INTO models(name, revision, version, payload, metrics, updated_at) "
                               "VALUES('encoder',?,?,?,?,?) "
                               "ON CONFLICT(name) DO UPDATE SET revision=excluded.revision, "
                               "version=excluded.version, payload=excluded.payload, "
                               "metrics=excluded.metrics, updated_at=excluded.updated_at",
-                              (revision, state.get("kind", ""), pickle.dumps(state),
-                               json.dumps({"dim": dim}), time.time()))
+                              (revision, state.get("kind", ""), payload,
+                               json.dumps(metrics), time.time()))
             self.save_vectors(matrix)
+
+    @staticmethod
+    def _decode_artifact(payload, metrics_json: str):
+        """Decode a model payload or return ``None`` for a legacy/bad artifact."""
+        try:
+            metrics = json.loads(metrics_json or "{}")
+        except ValueError:
+            return None
+        digest = metrics.get("artifact_sha256", "")
+        try:
+            return persist.load(payload, digest), metrics
+        except persist.UnsafeArtifact:
+            return None
 
     def load_encoder(self, revision: str, expected_rows: int):
         from .retrieval import encoder_from_state
 
-        rows = self.conn.execute("SELECT revision, payload FROM models WHERE name='encoder'").fetchall()
+        rows = self.conn.execute(
+            "SELECT revision, payload, metrics FROM models WHERE name='encoder'").fetchall()
         if not rows or rows[0][0] != revision:
             return None
-        state = pickle.loads(rows[0][1])
+        decoded = self._decode_artifact(rows[0][1], rows[0][2])
+        if decoded is None:
+            return None
+        state, _ = decoded
         matrix = self.load_vectors(expected_rows)
         if matrix is None:
             return None
@@ -480,10 +506,13 @@ class Store:
         revision and row count, so a changed tree can warm-start instead of
         paying a full SVD refit."""
         rows = self.conn.execute(
-            "SELECT revision, payload FROM models WHERE name='encoder'").fetchall()
+            "SELECT revision, payload, metrics FROM models WHERE name='encoder'").fetchall()
         if not rows:
             return None
-        return rows[0][0], pickle.loads(rows[0][1])
+        decoded = self._decode_artifact(rows[0][1], rows[0][2])
+        if decoded is None:
+            return None
+        return rows[0][0], decoded[0]
 
     # -- plan documents --------------------------------------------------- #
     def save_plan(self, root: str, task_id: str, doc: dict) -> None:
@@ -506,15 +535,56 @@ class Store:
         return doc
 
     # -- ledger ----------------------------------------------------------- #
+    @staticmethod
+    def _ledger_hash(entry: dict, prev_hash: str) -> str:
+        canon = json.dumps([
+            entry.get("task_id"), entry.get("component"), entry.get("revision"),
+            entry.get("timestamp"), entry.get("model_name"), entry.get("confidence"),
+            entry.get("reason_codes", []), entry.get("result", {}),
+            entry.get("inputs_hash", ""), prev_hash,
+        ], sort_keys=True, default=str)
+        return hashlib.sha256(canon.encode("utf-8")).hexdigest()
+
     def append_ledger(self, entry: dict) -> None:
+        """Append one row and chain its hash to the previous row.
+
+        The ledger trains models, so a silently edited row is a correctness
+        problem, not only an audit one.  ``verify_ledger`` recomputes the chain.
+        """
         with self._write_txn():
+            row = self.conn.execute(
+                "SELECT hash FROM ledger ORDER BY id DESC LIMIT 1").fetchall()
+            prev = (row[0][0] if row and row[0][0] else "")
+            digest = self._ledger_hash(entry, prev)
             self.conn.execute(
                 "INSERT INTO ledger(task_id, component, revision, timestamp, model_name, "
-                "confidence, reason_codes, result, inputs_hash) VALUES(?,?,?,?,?,?,?,?,?)",
+                "confidence, reason_codes, result, inputs_hash, prev_hash, hash) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 (entry.get("task_id"), entry.get("component"), entry.get("revision"),
                  entry.get("timestamp"), entry.get("model_name"), entry.get("confidence"),
                  json.dumps(entry.get("reason_codes", [])), json.dumps(entry.get("result", {})),
-                 entry.get("inputs_hash", "")))
+                 entry.get("inputs_hash", ""), prev, digest))
+
+    def verify_ledger(self) -> dict:
+        """Recompute the hash chain; return the first bad row, if any."""
+        rows = self.conn.execute(
+            "SELECT id, task_id, component, revision, timestamp, model_name, confidence, "
+            "reason_codes, result, inputs_hash, prev_hash, hash FROM ledger ORDER BY id").fetchall()
+        prev = ""
+        for row in rows:
+            entry = {
+                "task_id": row[1], "component": row[2], "revision": row[3],
+                "timestamp": row[4], "model_name": row[5], "confidence": row[6],
+                "reason_codes": json.loads(row[7] or "[]"),
+                "result": json.loads(row[8] or "{}"), "inputs_hash": row[9],
+            }
+            expected = self._ledger_hash(entry, prev)
+            if (row[10] or "") != prev or (row[11] or "") != expected:
+                return {"ok": False, "rows": len(rows), "first_bad_id": row[0],
+                        "reason": "hash chain mismatch"}
+            prev = expected
+        return {"ok": True, "rows": len(rows), "first_bad_id": None,
+                "reason": "chain intact"}
 
     def repo_revision(self) -> str:
         rows = self.conn.execute("SELECT revision FROM repo WHERE id = 1").fetchall()
@@ -530,32 +600,38 @@ class Store:
         out = []
         for row in self.conn.execute(
                 "SELECT task_id, component, revision, timestamp, model_name, confidence, "
-                "reason_codes, result, inputs_hash FROM ledger ORDER BY id").fetchall():
+                "reason_codes, result, inputs_hash, hash FROM ledger ORDER BY id").fetchall():
             out.append({
                 "task_id": row[0], "component": row[1], "revision": row[2],
                 "timestamp": row[3], "model_name": row[4], "confidence": row[5],
                 "reason_codes": json.loads(row[6] or "[]"),
                 "result": json.loads(row[7] or "{}"), "inputs_hash": row[8],
+                "hash": row[9],
             })
         return out
 
     # -- model artifacts -------------------------------------------------- #
     def save_model(self, name: str, version: str, obj, metrics: dict | None = None,
                    revision: str = "") -> None:
+        payload, digest = persist.dump(obj)
+        stored = {**(metrics or {}), "artifact_sha256": digest}
         with self._write_txn():
             self.conn.execute(
                 "INSERT INTO models(name, revision, version, payload, metrics, updated_at) "
                 "VALUES(?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET "
                 "revision=excluded.revision, version=excluded.version, payload=excluded.payload, "
                 "metrics=excluded.metrics, updated_at=excluded.updated_at",
-                (name, revision, version, pickle.dumps(obj), json.dumps(metrics or {}), time.time()))
+                (name, revision, version, payload, json.dumps(stored), time.time()))
 
     def load_model(self, name: str):
         rows = self.conn.execute("SELECT payload, version, metrics FROM models WHERE name=?",
                                  (name,)).fetchall()
         if not rows:
             return None
-        return pickle.loads(rows[0][0]), rows[0][1], json.loads(rows[0][2] or "{}")
+        decoded = self._decode_artifact(rows[0][0], rows[0][2])
+        if decoded is None:
+            return None
+        return decoded[0], rows[0][1], decoded[1]
 
     def load_model_at(self, name: str, revision: str):
         """Load a persisted artifact only if it was saved for this exact revision."""
@@ -563,12 +639,17 @@ class Store:
                                  "WHERE name=? AND revision=?", (name, revision)).fetchall()
         if not rows:
             return None
-        return pickle.loads(rows[0][0]), rows[0][1], json.loads(rows[0][2] or "{}")
+        decoded = self._decode_artifact(rows[0][0], rows[0][2])
+        if decoded is None:
+            return None
+        return decoded[0], rows[0][1], decoded[1]
 
     # -- pooled prior (global tier) --------------------------------------- #
     def save_pooled(self, kind: str, weights, n: int, version: str, metrics: dict | None = None) -> None:
         if not self._attached_global:
             return
+        payload, digest = persist.dump(weights)
+        stored = {**(metrics or {}), "artifact_sha256": digest}
         try:
             with self._write_txn():
                 self.conn.execute(
@@ -576,8 +657,7 @@ class Store:
                     "VALUES(?,?,?,?,?,?) ON CONFLICT(kind) DO UPDATE SET version=excluded.version, "
                     "weights=excluded.weights, n=excluded.n, metrics=excluded.metrics, "
                     "updated_at=excluded.updated_at",
-                    (kind, version, pickle.dumps(weights), int(n),
-                     json.dumps(metrics or {}), time.time()))
+                    (kind, version, payload, int(n), json.dumps(stored), time.time()))
         except Exception:  # pragma: no cover
             pass
 
@@ -637,7 +717,10 @@ class Store:
             return None
         if not rows:
             return None
-        return pickle.loads(rows[0][0]), int(rows[0][1]), json.loads(rows[0][2] or "{}")
+        decoded = self._decode_artifact(rows[0][0], rows[0][2])
+        if decoded is None:
+            return None
+        return decoded[0], int(rows[0][1]), decoded[1]
 
     def stats(self) -> dict:
         def one(sql, default=0):

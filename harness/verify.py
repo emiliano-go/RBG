@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from .checks import Toolchain, compile_command, detect, runner_argv
-from .isolation import Isolation, IsolationUnavailable, select as select_isolation
+from .isolation import Isolation, select as select_isolation
 from .paths import resolve_within
 
 SCHEMA_VERSION = 1
@@ -77,7 +77,7 @@ class Sandbox:
     def isolation(self) -> Isolation:
         """Selected once per sandbox; raises if no backend and no escape hatch."""
         if self._isolation is None:
-            self._isolation = select_isolation(self.network)
+            self._isolation = select_isolation(self.network, self.root)
         return self._isolation
 
     @staticmethod

@@ -15,6 +15,7 @@ a task survives a process restart by passing the same identifiers again
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import json
 import os
 import signal
@@ -150,6 +151,8 @@ def _authorize_root(root: str) -> str:
 def _evict_dependents(root: str) -> None:
     """Drop per-repo derivatives keyed to a revision that is no longer current."""
     _RETRIEVER_CACHE.pop(root, None)
+    _FAST_RETRIEVER_CACHE.pop(root, None)
+    _RETRIEVER_BUILD.pop(root, None)
     for key in [k for k in _LEARNED_CACHE if k == root or k.startswith(root + ":")]:
         _LEARNED_CACHE.pop(key, None)
     for key in [k for k in _RESULT_CACHE if k[0] == root]:
@@ -237,18 +240,31 @@ def _index(root: str) -> RepoIndex:
     cached = _INDEX_CACHE.get(root)
     if cached is not None and _INDEX_SIGNATURE.get(root) == signature:
         return cached
-    if _env_flag("HARNESS_INDEX_ASYNC"):
+    # Async is the default.  A cold parse of a large repo (plus its tree hash)
+    # can otherwise exceed the client's whole request timeout; the caller gets
+    # a retryable "building" result while the parse runs in the background.
+    explicit_async = "HARNESS_INDEX_ASYNC" in os.environ
+    if _env_flag("HARNESS_INDEX_ASYNC", "1"):
         _start_index_build(root, signature)
-        with _BUILD_LOCK:
-            state = dict(_BUILD_STATE.get(root) or {})
-        if state.get("signature") != signature:
-            _start_index_build(root, signature)  # tree changed again; new build
-            raise IndexBuilding(root, time.monotonic())
-        if state.get("status") == "error":
-            raise RuntimeError(state.get("error") or "index build failed")
-        if state.get("status") == "ready" and root in _INDEX_CACHE:
-            return _INDEX_CACHE[root]
-        raise IndexBuilding(root, state.get("started", time.monotonic()))
+        # Small repos finish in milliseconds; wait briefly so the common case
+        # is still a single call.  An explicitly configured async caller gets
+        # the old immediate "building" behaviour.
+        grace = 0.0 if explicit_async else max(
+            0, int(os.environ.get("HARNESS_INDEX_GRACE_MS", "1000"))) / 1000.0
+        deadline = time.monotonic() + grace
+        while True:
+            with _BUILD_LOCK:
+                state = dict(_BUILD_STATE.get(root) or {})
+            if state.get("signature") != signature:
+                _start_index_build(root, signature)  # tree changed again
+                raise IndexBuilding(root, time.monotonic())
+            if state.get("status") == "error":
+                raise RuntimeError(state.get("error") or "index build failed")
+            if state.get("status") == "ready" and root in _INDEX_CACHE:
+                return _INDEX_CACHE[root]
+            if time.monotonic() >= deadline:
+                raise IndexBuilding(root, state.get("started", time.monotonic()))
+            time.sleep(0.02)
     return _index_sync(root, signature, cached)
 
 
@@ -312,14 +328,84 @@ def _warm_lsi(store, idx: RepoIndex):
     return enc.refresh([c.content for c in idx.chunks])
 
 
-def _retriever(root: str) -> HybridRetriever:
-    """Cached per repo: building the LSA projector is not free.  A persisted
-    encoder for the current revision is reloaded (no re-fit); otherwise the
-    previous projector is warm-started, and only a cold start fits from scratch.
+_FAST_RETRIEVER_CACHE: dict[str, HybridRetriever] = {}
+_RETRIEVER_BUILD: dict[str, dict] = {}
+_RETRIEVER_BUILD_LOCK = threading.Lock()
+
+
+def _fast_retriever(idx: RepoIndex) -> HybridRetriever:
+    """A lexical-only retriever that is cheap to build on the read path.
+
+    Used while the semantic retriever is warming: FTS/BM25 answers immediately
+    instead of making the client wait for an SVD/embedding pass.
     """
+    retr = _FAST_RETRIEVER_CACHE.get(idx.root)
+    if retr is None or retr.index.revision != idx.revision:
+        lexical = FTSBackend(idx.chunks, _store(idx.root).fts_search)
+        retr = HybridRetriever(idx, encoder=LexicalOnlyEncoder(), lexical=lexical)
+        _FAST_RETRIEVER_CACHE[idx.root] = retr
+    return retr
+
+
+def _start_retriever_build(idx: RepoIndex) -> None:
+    with _RETRIEVER_BUILD_LOCK:
+        state = _RETRIEVER_BUILD.get(idx.root)
+        if state and state["revision"] == idx.revision and state["status"] != "error":
+            return
+        _RETRIEVER_BUILD[idx.root] = {"revision": idx.revision,
+                                      "status": "building", "error": None}
+
+    def _worker() -> None:
+        try:
+            # Fit only: no DB access from this thread.  A second libSQL
+            # connection writing while the main connection reads pansics the
+            # binding; the encoder cache is swapped in memory instead.
+            heavy = heavy_encoder()
+            if heavy is not None:
+                encoder = heavy
+            elif len(idx.chunks) <= LSI_MAX_CORPUS:
+                encoder = LSIEncoder(k=128).fit([c.content for c in idx.chunks])
+            else:
+                encoder = LexicalOnlyEncoder()
+            lexical = FTSBackend(idx.chunks, _store(idx.root).fts_search)
+            retr = HybridRetriever(idx, encoder=encoder, lexical=lexical)
+            status, error = "ready", None
+        except Exception as exc:  # noqa: BLE001 - retryable on the next call
+            status, error = "error", f"{type(exc).__name__}: {exc}"
+            retr = None
+        if retr is not None:
+            _RETRIEVER_CACHE[idx.root] = retr
+        with _RETRIEVER_BUILD_LOCK:
+            _RETRIEVER_BUILD[idx.root] = {"revision": idx.revision,
+                                          "status": status, "error": error}
+
+    threading.Thread(target=_worker, name=f"retriever-build:{idx.root}",
+                     daemon=True).start()
+
+
+def _retriever(root: str) -> HybridRetriever:
+    """Full retriever when warm, lexical-only while it builds in the background."""
     idx = _index(root)
+    retr = _RETRIEVER_CACHE.get(idx.root)
+    if retr is not None:
+        return retr
+    # A persisted encoder is a cheap main-thread read and skips the fit.
+    try:
+        encoder = _store(idx.root).load_encoder(idx.revision, len(idx.chunks))
+    except Exception:
+        encoder = None
+    if encoder is not None:
+        lexical = FTSBackend(idx.chunks, _store(idx.root).fts_search)
+        retr = HybridRetriever(idx, encoder=encoder, lexical=lexical)
+        _RETRIEVER_CACHE[idx.root] = retr
+        return retr
+    _start_retriever_build(idx)
+    return _fast_retriever(idx)
+
+
+def _build_retriever(idx: RepoIndex, store=None) -> HybridRetriever:
+    store = store or _store(idx.root)
     if idx.root not in _RETRIEVER_CACHE:
-        store = _store(idx.root)
         lexical = FTSBackend(idx.chunks, store.fts_search)
         # An opt-in semantic encoder wins over the persisted lexical one, and is
         # persisted itself so vector_search queries vectors from the same model.
@@ -382,7 +468,15 @@ def _learned(root: str, retrain: bool = False) -> LearnedModels:
     Training happens only through the explicit ``train_models`` tool, so no
     retrieval or impact query ever pays to refit.
     """
-    idx = _index(root)
+    if retrain:
+        idx = _index_sync(root, _tree_signature(root))
+    else:
+        try:
+            idx = _index(root)
+        except IndexBuilding:
+            # A model-dependent read degrades to "no model yet" rather than
+            # blocking the client on the same cold index build.
+            return LearnedModels()
     store = _store(idx.root)
     key = f"{idx.root}:{idx.revision}:{store.ledger_count()}"
     if retrain:
@@ -939,7 +1033,9 @@ def vector_search(root: str, query: str, limit: int = 10) -> dict:
     """On-disk ANN search through the libsql vector index (query encoded with the
     repo's persisted encoder, scored by ``vector_distance_cos``)."""
     idx = _index(root)
-    retr = _retriever(root)
+    # Vector search needs the real encoder; unlike search_code it may pay the
+    # fit on a cold call rather than answer from the lexical fallback.
+    retr = _RETRIEVER_CACHE.get(idx.root) or _build_retriever(idx)
     store = _store(idx.root)
     qv = retr.encoder.encode(query)
     rows = store.vector_search(qv, int(limit))
@@ -1252,6 +1348,71 @@ def _error(msg_id, code, message):
     return {"jsonrpc": "2.0", "id": msg_id, "error": {"code": code, "message": message}}
 
 
+_RATE_LOCK = threading.Lock()
+_RATE_STATE: dict[str, list[float]] = {}
+
+
+def _rate_ok(tool: str) -> bool:
+    """Token-bucket limiter (MCP requires servers to rate-limit invocations)."""
+    try:
+        rate = float(os.environ.get("HARNESS_MCP_RATE_PER_MIN", "120")) / 60.0
+        burst = float(os.environ.get("HARNESS_MCP_BURST", "30"))
+    except ValueError:
+        return True
+    if rate <= 0:
+        return True
+    now = time.monotonic()
+    with _RATE_LOCK:
+        tokens, last = _RATE_STATE.get(tool, [burst, now])
+        tokens = min(burst, tokens + (now - last) * rate)
+        if tokens < 1.0:
+            _RATE_STATE[tool] = [tokens, now]
+            return False
+        _RATE_STATE[tool] = [tokens - 1.0, now]
+        return True
+
+
+def _validate_args(spec: dict, args) -> str:
+    """Minimal JSON-Schema check for the tool surface (no new dependency)."""
+    schema = spec.get("inputSchema") or {}
+    if not isinstance(args, dict):
+        return "arguments must be an object"
+    for name in schema.get("required", []):
+        if name not in args:
+            return f"missing required argument: {name}"
+    for name, value in args.items():
+        rule = (schema.get("properties") or {}).get(name)
+        if not rule:
+            continue
+        kind = rule.get("type")
+        if kind == "string":
+            if not isinstance(value, str):
+                return f"{name} must be a string"
+            limit = 200_000 if name in ("content",) else 4096
+            if len(value) > limit:
+                return f"{name} exceeds {limit} characters"
+        elif kind == "integer":
+            if not isinstance(value, int) or isinstance(value, bool):
+                return f"{name} must be an integer"
+        elif kind == "boolean":
+            if not isinstance(value, bool):
+                return f"{name} must be a boolean"
+        elif kind == "array":
+            if not isinstance(value, list):
+                return f"{name} must be an array"
+            if len(value) > 512:
+                return f"{name} exceeds 512 items"
+    return ""
+
+
+def _tool_manifest_hash() -> str:
+    canon = json.dumps({name: {"description": spec["description"],
+                               "inputSchema": spec["inputSchema"]}
+                        for name, spec in sorted(TOOLS.items())},
+                       sort_keys=True, default=str)
+    return hashlib.sha256(canon.encode("utf-8")).hexdigest()
+
+
 def _tool_result(msg_id, out, *, is_error: bool = False):
     """Serialize a tool result once, bounding both representations.
 
@@ -1316,7 +1477,8 @@ def handle(msg: dict) -> dict | None:
             "capabilities": {"tools": {"listChanged": False},
                              "resources": {"listChanged": False},
                              "prompts": {"listChanged": False}},
-            "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
+            "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION,
+                           "tool_manifest_sha256": _tool_manifest_hash()},
         })
     if method == "ping":
         return _result(msg_id, {})
@@ -1331,6 +1493,11 @@ def handle(msg: dict) -> dict | None:
         spec = TOOLS.get(name)
         if not spec:
             return _error(msg_id, -32602, f"unknown tool: {name}")
+        problem = _validate_args(spec, args)
+        if problem:
+            return _error(msg_id, -32602, f"invalid arguments: {problem}")
+        if not _rate_ok(name):
+            return _error(msg_id, -32000, f"rate limit exceeded for {name}")
         try:
             out = _call_with_deadline(spec["fn"], args)
             return _tool_result(msg_id, out)

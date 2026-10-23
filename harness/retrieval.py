@@ -484,6 +484,9 @@ def encoder_from_state(state: dict, doc_vecs: np.ndarray) -> "DenseEncoder | LSI
     if kind == "sentence-transformer":
         from .retrieval_heavy import SentenceTransformerEncoder
         return SentenceTransformerEncoder.from_state(state, doc_vecs)
+    if kind == "static":
+        from .retrieval_static import StaticCodeEncoder
+        return StaticCodeEncoder.from_state(state, doc_vecs)
     return DenseEncoder.from_state(state, doc_vecs)
 
 

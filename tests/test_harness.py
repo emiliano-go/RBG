@@ -17,7 +17,7 @@ from harness.models import (  # noqa: E402
     PlattScaler, Policy, TestSelector, extract_features, select_action,
 )
 from harness.retrieval import BM25, DenseEncoder, HybridRetriever  # noqa: E402
-from harness.verify import Sandbox, Verifier, parse_pytest  # noqa: E402
+from harness.verify import Sandbox, parse_pytest  # noqa: E402
 from harness.__main__ import (  # noqa: E402
     BUGGY_SHOP, FIXED_SHOP, TEST_SHOP, ScriptedLLM, _make_demo_repo,
 )
@@ -1110,17 +1110,17 @@ def test_mcp_db_tools_and_resources(tmp_path):
 
 # -- spec gap closure: real decision features, action menu, retriever contract #
 def test_select_action_is_drawn_from_the_menu():
-    cases = {
-        ("run_full_suite",): select_action(has_failures=True, full_suite_required=True,
-                                           full_suite_ran=False),
-        ("ask_main_llm_to_revise",): select_action(has_failures=True, full_suite_required=False,
-                                                   full_suite_ran=False),
-        ("run_full_suite",): select_action(has_failures=False, full_suite_required=False,
-                                           full_suite_ran=False, uncertainty=True),
-        ("stop_with_verified_result",): select_action(has_failures=False, full_suite_required=False,
-                                                      full_suite_ran=False),
-    }
-    for (expected,), (action, reasons) in cases.items():
+    cases = [
+        ("run_full_suite", select_action(has_failures=True, full_suite_required=True,
+                                         full_suite_ran=False)),
+        ("ask_main_llm_to_revise", select_action(has_failures=True, full_suite_required=False,
+                                                 full_suite_ran=False)),
+        ("run_full_suite", select_action(has_failures=False, full_suite_required=True,
+                                         full_suite_ran=False, uncertainty=True)),
+        ("stop_with_verified_result", select_action(has_failures=False, full_suite_required=False,
+                                                    full_suite_ran=False)),
+    ]
+    for expected, (action, reasons) in cases:
         assert action == expected and action in ACTIONS
         assert reasons
 
@@ -2289,3 +2289,40 @@ def test_plan_audit_ignores_a_spoofed_changed_list(tmp_path):
         str(root), task_id="spoof", changed_files=["a.py"])["drift"]
     assert drift["verdict"] == "block"
     assert any(r["code"] == "unplanned_file" for r in drift["blockers"])
+
+
+def test_default_index_path_waits_for_a_small_repo(tmp_path, monkeypatch):
+    """Async is the default, but a small repo still answers on the first call."""
+    repo = tmp_path / "default_async"
+    repo.mkdir()
+    (repo / "core.py").write_text("def beta_helper():\n    return 42\n")
+    monkeypatch.delenv("HARNESS_INDEX_ASYNC", raising=False)
+    mcp_server._INDEX_CACHE.clear()
+    mcp_server._INDEX_SIGNATURE.clear()
+    mcp_server._BUILD_STATE.clear()
+    idx = mcp_server._index(str(repo))
+    assert idx.chunks
+
+
+def test_retriever_serves_lexical_while_semantic_warms(tmp_path, monkeypatch):
+    """A cold semantic build must not block search_code; lexical answers first."""
+    import time
+    from harness.retrieval import LexicalOnlyEncoder
+    monkeypatch.setattr(mcp_server, "LSI_MAX_CORPUS", 10 ** 9)
+    root = str(tmp_path)
+    (tmp_path / "m.py").write_text("def alpha():\n    return 1\n")
+    mcp_server._INDEX_CACHE.clear()
+    mcp_server._INDEX_SIGNATURE.clear()
+    mcp_server._BUILD_STATE.clear()
+    mcp_server._RETRIEVER_CACHE.clear()
+    mcp_server._FAST_RETRIEVER_CACHE.clear()
+    mcp_server._RETRIEVER_BUILD.clear()
+    first = mcp_server._retriever(root)
+    assert isinstance(first.encoder, LexicalOnlyEncoder)
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        full = mcp_server._RETRIEVER_CACHE.get(mcp_server._index(root).root)
+        if full is not None:
+            break
+        time.sleep(0.05)
+    assert full is not None and not isinstance(full.encoder, LexicalOnlyEncoder)
