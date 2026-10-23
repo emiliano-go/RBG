@@ -17,6 +17,7 @@ rank tests, run checks, train the models, and read store/drift stats.
 
 ## Contents
 
+- [Install](#install)
 - [Architecture](#architecture)
 - [MCP tools](#mcp-tools) — all 25, with arguments and returns
 - [Models](#models) — every learned model and statistical component
@@ -26,6 +27,49 @@ rank tests, run checks, train the models, and read store/drift stats.
 - [Layout](#layout)
 - [Quickstart](#quickstart)
 - [Status](#status)
+
+---
+
+## Install
+
+One command installs the package and registers its MCP server with every agent
+client it finds:
+
+```bash
+./install.sh --root ~/code     # or: pipx install . && rbg install --root ~/code
+```
+
+`rbg install` merges an `rbg` entry into each client's existing config (nothing
+else in the file is touched) and is idempotent. Re-run it after moving the
+install, or use `--uninstall` to remove the entry. `install.sh` defaults
+`--root` to the directory it was run from, never `$HOME`.
+
+```bash
+rbg install --root ~/code          # auto-detect clients; root is required
+rbg install --target claude        # one client (repeatable)
+rbg install --project              # project-local config; grants the cwd
+rbg install --dir ~/code/proj      # project config elsewhere
+rbg install --dry-run              # show files, write nothing
+rbg install --uninstall            # remove the entry
+```
+
+| Target | User config | Project config |
+|---|---|---|
+| `opencode` | `~/.config/opencode/opencode.json` | `./opencode.json` |
+| `claude` | `~/.claude.json` | `./.mcp.json` |
+| `cursor` | `~/.cursor/mcp.json` | `./.cursor/mcp.json` |
+| `windsurf` | `~/.codeium/windsurf/mcp_config.json` | — |
+| `gemini` | `~/.gemini/settings.json` | `./.gemini/settings.json` |
+| `codex` | `~/.codex/config.toml` | `./.codex/config.toml` |
+| `vscode` | — | `./.vscode/mcp.json` |
+
+The server **denies every repository by default**. The generated entry sets
+`HARNESS_ALLOWED_ROOTS` to exactly the directories passed with `--root` (or the
+project directory for `--project`). There is deliberately no `$HOME` default:
+every path under an allowed root is readable through the retrieval tools, so
+grant repository directories, not your home. Passing `/` is refused; granting
+`$HOME` or a parent prints a warning. Restart the client after installing so it
+reloads the MCP server list.
 
 ---
 
@@ -351,8 +395,9 @@ Requires Python 3.12+ and [libSQL](https://github.com/tursodatabase/libsql)
 (`pip install libsql`); only `numpy` is needed beyond that.
 
 ```bash
-# install the package (adds the `rbg` and `rbg-mcp` console scripts)
+# install the package and register the MCP server (see Install above)
 pip install -e '.[dev]'
+rbg install
 
 # run the end-to-end demo on a throwaway repo
 rbg demo

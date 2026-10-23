@@ -45,6 +45,50 @@ def test_bm25_ranks_relevant_first():
     assert idx.chunks[ranked[0][0]].path == "b.py"
 
 
+def test_large_corpus_stays_lexical_only(monkeypatch):
+    """Above the dense cap the read path must not fit/encode the whole corpus."""
+    import harness.retrieval as retrieval
+    import tempfile
+    from pathlib import Path
+    d = Path(tempfile.mkdtemp())
+    idx = _repo(d)
+    monkeypatch.setattr(retrieval, "LSI_MAX_CORPUS", 0)
+    retr = retrieval.HybridRetriever(idx)
+    assert isinstance(retr.encoder, retrieval.LexicalOnlyEncoder)
+    assert retr.encoder.rank("beta_helper", idx.chunks, 3) == []
+    hits = retr.retrieve("beta_helper", limit=3)
+    assert hits and hits[0].path == "b.py"  # lexical leg still answers
+
+
+def test_tool_deadline_interrupts_slow_call(monkeypatch):
+    import time
+    monkeypatch.setenv("HARNESS_TOOL_TIMEOUT_MS", "100")
+    with pytest.raises(mcp_server.ToolTimeout):
+        mcp_server._call_with_deadline(lambda **_: time.sleep(2), {})
+
+
+def test_async_index_build_returns_building_then_ready(tmp_path, monkeypatch):
+    import time
+    repo = tmp_path / "async_repo"
+    repo.mkdir()
+    (repo / "core.py").write_text("def beta_helper():\n    return 42\n")
+    monkeypatch.setenv("HARNESS_INDEX_ASYNC", "1")
+    mcp_server._INDEX_CACHE.clear()
+    mcp_server._INDEX_SIGNATURE.clear()
+    mcp_server._BUILD_STATE.clear()
+    with pytest.raises(mcp_server.IndexBuilding):
+        mcp_server._index(str(repo))
+    deadline = time.monotonic() + 30
+    idx = None
+    while time.monotonic() < deadline:
+        try:
+            idx = mcp_server._index(str(repo))
+            break
+        except mcp_server.IndexBuilding:
+            time.sleep(0.05)
+    assert idx is not None and idx.chunks
+
+
 def test_dense_encoder_similarity():
     enc = DenseEncoder(dim=256).fit(["def parse_config(path)", "def parse_ini_file(path)", "class DatabaseConnection"])
     a = enc.encode("parse config file")
@@ -885,6 +929,16 @@ def test_index_is_built_once_across_processes(tmp_path, monkeypatch):
         _out, err = proc.communicate(timeout=60)
         assert proc.returncode == 0, err.decode()
     assert counter.read_text().count("build") == 1
+
+
+def test_db_fts_search_returns_positions(tmp_path):
+    repo = _db_repo(tmp_path)
+    idx = RepoIndex.build(str(repo))
+    store = hdb.Store(str(repo))
+    store.save_index(idx)
+    hits = store.fts_search("compute metric", 3)
+    assert hits and all(0 <= i < len(idx.chunks) for i, _ in hits)
+    store.close()
 
 
 def test_db_encoder_reload_matches_fit(tmp_path):

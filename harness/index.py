@@ -24,6 +24,23 @@ GENERATED_SKIP = {
     "htmlcov", ".hypothesis", ".idea", ".vscode",
 }
 
+_EXTRA_SKIP_CACHE: tuple[str, frozenset[str]] = ("", frozenset())
+
+
+def _extra_skip_dirs() -> frozenset[str]:
+    """Operator-supplied directory names to prune (``HARNESS_EXTRA_SKIP_DIRS``).
+
+    A monorepo root often mixes source with generated campaign/site artefacts;
+    this lets a deployment exclude those without hard-coding repo-specific
+    names in the indexer.
+    """
+    global _EXTRA_SKIP_CACHE
+    raw = os.environ.get("HARNESS_EXTRA_SKIP_DIRS", "")
+    if _EXTRA_SKIP_CACHE[0] != raw:
+        names = frozenset(p.strip().strip("/") for p in raw.split(",") if p.strip())
+        _EXTRA_SKIP_CACHE = (raw, names)
+    return _EXTRA_SKIP_CACHE[1]
+
 
 def _git_ignored(root: str) -> set[str]:
     """Repo-relative paths (dirs and files) excluded by git's ignore rules.
@@ -125,6 +142,7 @@ class RepoIndex:
     @staticmethod
     def _skip_dir(name: str) -> bool:
         return (name in SKIP_DIRS or name in GENERATED_SKIP
+                or name in _extra_skip_dirs()
                 or (name.startswith(".") and name not in {".github", ".circleci"}))
 
     def _index_python(self, rel: str, text: str) -> None:

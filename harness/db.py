@@ -333,7 +333,8 @@ class Store:
             return []
         match = " OR ".join(f'"{t}"' for t in dict.fromkeys(terms))
         try:
-            ids = [r[0] for r in self.conn.execute("SELECT id FROM chunks ORDER BY id")]
+            ids = [r[0] for r in self.conn.execute(
+                "SELECT id FROM chunks ORDER BY id").fetchall()]
             pos = {cid: i for i, cid in enumerate(ids)}
             rows = self.conn.execute(
                 "SELECT rowid, bm25(chunks_fts) AS s FROM chunks_fts "

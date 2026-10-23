@@ -136,6 +136,43 @@ def cmd_replay(root: str, transcript: str, task: str, in_place: bool = False) ->
     return 0 if report.success else 1
 
 
+def cmd_install(args) -> int:
+    from .install import TARGETS, InstallError, broad_roots, install
+
+    try:
+        records = install(
+            args.target,
+            scope="project" if args.project else "user",
+            directory=args.dir or os.getcwd(),
+            roots=args.root,
+            dry_run=args.dry_run,
+            uninstall=args.uninstall,
+        )
+    except InstallError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if not records:
+        print("error: no target selected", file=sys.stderr)
+        return 1
+    for rec in records:
+        if rec.get("path"):
+            print(f"{rec['target']:<9} {rec['status']:<11} {rec['path']}")
+        else:
+            print(f"{rec['target']:<9} {rec['status']:<11} ({rec.get('reason')})")
+    if args.dry_run:
+        print("dry run: no files written")
+    if not args.uninstall:
+        roots = records[0].get("roots") or []
+        print("allowed roots: " + (", ".join(roots) if roots else "(none)"))
+        broad = broad_roots(roots)
+        if broad:
+            print("warning: these roots include HOME or a parent: " + ", ".join(broad))
+        print("restart your agent client to load rbg-mcp")
+    if not args.target and not args.dry_run:
+        print(f"pass --target {'|'.join(TARGETS)} to choose explicitly")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] in ("eval", "compare"):
@@ -158,6 +195,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("transcript")
     p.add_argument("task")
     p.add_argument("--in-place", action="store_true")
+    p = sub.add_parser("install", help="register the MCP server with agent harnesses")
+    p.add_argument("--target", action="append", metavar="NAME",
+                   help="harness to configure (repeatable); default auto-detect")
+    p.add_argument("--project", action="store_true",
+                   help="write a project-local config instead of the user config")
+    p.add_argument("--dir", help="project directory (default: cwd)")
+    p.add_argument("--root", action="append",
+                   help="repository root the server may access (repeatable); "
+                        "required for user scope, defaults to the project dir")
+    p.add_argument("--dry-run", action="store_true", help="print what would be written")
+    p.add_argument("--uninstall", action="store_true", help="remove the rbg entry")
     args = ap.parse_args(argv)
     if args.cmd == "index":
         cmd_index(args.root)
@@ -174,6 +222,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_demo()
     elif args.cmd == "replay":
         return cmd_replay(args.root, args.transcript, args.task, args.in_place)
+    elif args.cmd == "install":
+        return cmd_install(args)
     return 0
 
 

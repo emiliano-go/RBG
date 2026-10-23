@@ -4,14 +4,29 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rbg-harness"
-version = "0.1.0"
+version = "0.2.0"
 description = "One main LLM plus deterministic control-plane, hybrid retrieval, sandboxed verification, and small learned models."
 readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.12"
+keywords = ["mcp", "coding-agent", "retrieval", "verification", "llm"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = [
     "numpy",
     "libsql",
 ]
+
+[project.urls]
+Homepage = "https://github.com/emiliano-go/RBG-harness"
+Issues = "https://github.com/emiliano-go/RBG-harness/issues"
 
 [project.optional-dependencies]
 dev = ["pytest"]

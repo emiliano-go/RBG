@@ -17,7 +17,7 @@ a deterministic gate.
 | Boundary | Control | Where |
 |---|---|---|
 | Repo path → filesystem | Containment: `resolve_within` resolves symlinks and rejects anything outside the root (`..`, sibling-prefix, symlink escape). | `harness/paths.py` |
-| MCP client → repository | Deny by default: no path is served unless it is inside `HARNESS_ALLOWED_ROOTS`. | `harness/mcp_server.py` |
+| MCP client → repository | Deny by default: no path is served unless it is inside `HARNESS_ALLOWED_ROOTS`. The installer grants only explicitly named roots; it never defaults to `$HOME` and refuses `/`. | `harness/mcp_server.py`, `harness/install.py` |
 | Model output → edits | Every edit path goes through `resolve_within`; writes land in a disposable git worktree, and the caller's checkout is never mutated. | `harness/workspace.py`, `harness/orchestrator.py` |
 | Command → OS | A required isolation backend (`bwrap`, then `nsjail`), probed once with a trivial command; commands run argv-only (`shell=False`). | `harness/isolation.py`, `harness/verify.py` |
 | Parent env → child | Allowlist only (`PATH`, `HOME`, `LANG`, temp vars, `LC_*`, `PYTHON*`), never a denylist; extend deliberately with `HARNESS_ENV_ALLOW`. | `harness/verify.py` |

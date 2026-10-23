@@ -17,7 +17,9 @@ from __future__ import annotations
 import fnmatch
 import json
 import os
+import signal
 import sys
+import threading
 import time
 import traceback
 from collections import OrderedDict
@@ -37,7 +39,8 @@ from .models import TestSelector, drift_features
 from .paths import resolve_within
 from .plan import PlanDocument, PlanEditor, audit_completion, parse_plan, scope_drift
 from .plan_drift import audit_document, section_validation
-from .retrieval import FTSBackend, HybridRetriever, LSIEncoder, heavy_encoder, tokenize
+from .retrieval import (DenseEncoder, FTSBackend, HybridRetriever, LSIEncoder,
+                        LSI_MAX_CORPUS, LexicalOnlyEncoder, heavy_encoder, tokenize)
 from .training import (LearnedModels, PROMOTION_KEY, read_ledger,
                        train_from_ledger, validate_and_promote)
 from .verify import Sandbox
@@ -174,27 +177,118 @@ def _index_lock(path: str):
             os.close(fd)
 
 
+class IndexBuilding(RuntimeError):
+    """The index is being built in the background; retry this tool shortly."""
+
+    def __init__(self, root: str, started: float) -> None:
+        self.root = root
+        self.started = started
+        super().__init__("index build in progress")
+
+    def payload(self) -> dict:
+        elapsed_ms = round((time.monotonic() - self.started) * 1000, 1)
+        return {
+            "root": self.root,
+            "status": "building",
+            "degraded": True,
+            "index_build_ms": elapsed_ms,
+            "message": "index build in progress; retry this tool in a few seconds",
+        }
+
+
+_BUILD_STATE: dict[str, dict] = {}
+_BUILD_LOCK = threading.Lock()
+
+
+def _env_flag(name: str, default: str = "0") -> bool:
+    return os.environ.get(name, default).lower() in ("1", "true", "yes", "on")
+
+
+def _start_index_build(root: str, signature: str) -> None:
+    with _BUILD_LOCK:
+        state = _BUILD_STATE.get(root)
+        if state and state["signature"] == signature and state["status"] != "error":
+            return
+        _BUILD_STATE[root] = {"signature": signature, "status": "building",
+                              "started": time.monotonic(), "error": None}
+        started = _BUILD_STATE[root]["started"]
+
+    def _worker() -> None:
+        try:
+            # Own Store/connection: the main loop may serve other tools on the
+            # cached connection while this thread writes the index.
+            _index_sync(root, signature, isolated=True)
+        except Exception as exc:  # noqa: BLE001 - surfaced on the next call
+            with _BUILD_LOCK:
+                _BUILD_STATE[root] = {"signature": signature, "status": "error",
+                                      "started": started,
+                                      "error": f"{type(exc).__name__}: {exc}"}
+            return
+        with _BUILD_LOCK:
+            _BUILD_STATE[root] = {"signature": signature, "status": "ready",
+                                  "started": started, "error": None}
+
+    threading.Thread(target=_worker, name=f"index-build:{root}", daemon=True).start()
+
+
 def _index(root: str) -> RepoIndex:
     root = _authorize_root(root)
     signature = _tree_signature(root)
     cached = _INDEX_CACHE.get(root)
     if cached is not None and _INDEX_SIGNATURE.get(root) == signature:
         return cached
-    fingerprint = _tree_hash(root)
-    store = _store(root)
+    if _env_flag("HARNESS_INDEX_ASYNC"):
+        _start_index_build(root, signature)
+        with _BUILD_LOCK:
+            state = dict(_BUILD_STATE.get(root) or {})
+        if state.get("signature") != signature:
+            _start_index_build(root, signature)  # tree changed again; new build
+            raise IndexBuilding(root, time.monotonic())
+        if state.get("status") == "error":
+            raise RuntimeError(state.get("error") or "index build failed")
+        if state.get("status") == "ready" and root in _INDEX_CACHE:
+            return _INDEX_CACHE[root]
+        raise IndexBuilding(root, state.get("started", time.monotonic()))
+    return _index_sync(root, signature, cached)
+
+
+def _index_sync(root: str, signature: str, cached: RepoIndex | None = None,
+                isolated: bool = False) -> RepoIndex:
+    store = db.Store(root) if isolated else _store(root)
     try:
-        idx = store.load_index(fingerprint)  # cache hit: no re-parse
-    except Exception:
-        idx = None
-    if idx is None:
-        with _index_lock(store.path):
-            try:  # another process may have built it while we waited
-                idx = store.load_index(fingerprint)
+        # Cheap freshness fast path: a warm DB index carries the metadata
+        # signature it was built from, so the whole-tree content hash (123 MB
+        # read here) is only paid when files actually changed.
+        try:
+            if store.get_meta("tree_signature") == signature:
+                idx = store.load_index(None)
+            else:
+                idx = None
+        except Exception:
+            idx = None
+        if idx is None:
+            fingerprint = _tree_hash(root)
+            try:
+                idx = store.load_index(fingerprint)  # cache hit: no re-parse
             except Exception:
                 idx = None
             if idx is None:
-                idx = RepoIndex.build(root, revision=fingerprint)
-                store.save_index(idx)
+                with _index_lock(store.path):
+                    try:  # another process may have built it while we waited
+                        idx = store.load_index(fingerprint)
+                    except Exception:
+                        idx = None
+                    if idx is None:
+                        idx = RepoIndex.build(root, revision=fingerprint)
+                        store.save_index(idx)
+        try:
+            if store.get_meta("tree_signature") != signature:
+                store.set_meta("tree_signature", signature)
+        except Exception:
+            pass
+    finally:
+        if isolated:
+            store.close()
     if cached is not None and cached.revision != idx.revision:
         _evict_dependents(root)  # stale index/retriever/models must not be served
     _INDEX_CACHE[root] = idx
@@ -211,6 +305,8 @@ def _warm_lsi(store, idx: RepoIndex):
     except Exception:
         return None
     if not prev or prev[1].get("kind") != "lsi":
+        return None
+    if len(idx.chunks) > LSI_MAX_CORPUS:
         return None
     enc = LSIEncoder.from_state(prev[1], [])
     return enc.refresh([c.content for c in idx.chunks])
@@ -242,11 +338,24 @@ def _retriever(root: str) -> HybridRetriever:
             if encoder is None:
                 encoder = _warm_lsi(store, idx)
                 warmed = encoder is not None
+            if encoder is None and len(idx.chunks) <= LSI_MAX_CORPUS:
+                # Reuse a persisted dense encoder's idf across revisions: the
+                # document matrix is rebuilt lazily, but the O(corpus) fit is
+                # skipped.  (Above the cap HybridRetriever stays lexical-only.)
+                try:
+                    prev = store.load_prev_encoder()
+                except Exception:
+                    prev = None
+                if prev and prev[1].get("kind") == "dense":
+                    enc = DenseEncoder(dim=int(prev[1].get("dim", 512)))
+                    enc.idf = dict(prev[1].get("idf", {}))
+                    encoder = enc
+                    warmed = True
             if encoder is not None:
                 retr = HybridRetriever(idx, encoder=encoder, lexical=lexical)
             else:
                 retr = HybridRetriever(idx, lexical=lexical)
-            if encoder is None or warmed:
+            if (encoder is None or warmed) and not isinstance(retr.encoder, LexicalOnlyEncoder):
                 store.save_encoder(idx.revision, retr.encoder.to_state(),
                                    retr.encoder.document_vectors(idx.chunks))
         _RETRIEVER_CACHE[idx.root] = retr
@@ -1067,6 +1176,7 @@ TOOLS = {
 }
 
 MAX_OUTPUT_BYTES = 512 * 1024
+MAX_LINE_BYTES = int(os.environ.get("HARNESS_MCP_MAX_LINE_BYTES", str(1024 * 1024)))
 
 # MCP resource surface (spec 3.3C): read-only views over a repo's store.  The
 # repo is passed as a query parameter so one server serves every snapshot.
@@ -1142,6 +1252,57 @@ def _error(msg_id, code, message):
     return {"jsonrpc": "2.0", "id": msg_id, "error": {"code": code, "message": message}}
 
 
+def _tool_result(msg_id, out, *, is_error: bool = False):
+    """Serialize a tool result once, bounding both representations.
+
+    The text copy used to be sliced while ``structuredContent`` kept the whole
+    object, so a large bundle defeated ``MAX_OUTPUT_BYTES``.  When the payload
+    is over budget, return a compact structured summary plus a bounded preview
+    so the caller still learns what happened.
+    """
+    payload = json.dumps(out, default=str)
+    if len(payload) <= MAX_OUTPUT_BYTES:
+        return _result(msg_id, {"content": [{"type": "text", "text": payload}],
+                                "structuredContent": out, "isError": is_error})
+    marker = "\n...[truncated]"
+    text = payload[:MAX_OUTPUT_BYTES - len(marker)] + marker
+    summary = {"status": "truncated", "truncated": True, "bytes": len(payload),
+               "limit": MAX_OUTPUT_BYTES, "preview": text[:8192]}
+    return _result(msg_id, {"content": [{"type": "text", "text": text}],
+                            "structuredContent": summary, "isError": is_error})
+
+
+class ToolTimeout(RuntimeError):
+    pass
+
+
+def _on_alarm(signum, frame):  # noqa: ARG001 - signal handler signature
+    raise ToolTimeout("tool exceeded its wall-clock budget")
+
+
+def _call_with_deadline(fn, args: dict):
+    """Run a tool under a hard wall-clock cap.
+
+    The read budget only decided whether to skip the reranker; it could not stop
+    a cold index/encoder pass from hanging the single-threaded stdio loop.  A
+    SIGALRM interrupts that work (it runs on the main thread) and the call
+    returns a structured timeout instead of blocking every later request.
+    """
+    default_ms = int(os.environ.get("HARNESS_TOOL_TIMEOUT_MS", "60000"))
+    requested = int(args.get("timeout_ms") or 0)
+    timeout_ms = max(default_ms, requested)
+    if (timeout_ms <= 0 or not hasattr(signal, "SIGALRM")
+            or threading.current_thread() is not threading.main_thread()):
+        return fn(**args)
+    old = signal.signal(signal.SIGALRM, _on_alarm)
+    try:
+        signal.setitimer(signal.ITIMER_REAL, timeout_ms / 1000)
+        return fn(**args)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old)
+
+
 def handle(msg: dict) -> dict | None:
     method = msg.get("method")
     msg_id = msg.get("id")
@@ -1171,10 +1332,14 @@ def handle(msg: dict) -> dict | None:
         if not spec:
             return _error(msg_id, -32602, f"unknown tool: {name}")
         try:
-            out = spec["fn"](**args)
-            text = json.dumps(out, default=str)[:MAX_OUTPUT_BYTES]
-            return _result(msg_id, {"content": [{"type": "text", "text": text}],
-                                    "structuredContent": out, "isError": False})
+            out = _call_with_deadline(spec["fn"], args)
+            return _tool_result(msg_id, out)
+        except IndexBuilding as exc:
+            return _tool_result(msg_id, exc.payload())
+        except ToolTimeout as exc:
+            out = {"status": "timeout", "degraded": True, "tool": name,
+                   "message": str(exc)}
+            return _tool_result(msg_id, out, is_error=True)
         except Exception as exc:  # noqa: BLE001 - reported as a tool error, never a crash
             tb = traceback.format_exc() if os.environ.get("HARNESS_MCP_DEBUG") else ""
             return _result(msg_id, {"content": [{"type": "text",
@@ -1210,19 +1375,49 @@ def handle(msg: dict) -> dict | None:
     return _error(msg_id, -32601, f"method not found: {method}")
 
 
+def _send(response) -> None:
+    if response is not None:
+        sys.stdout.write(json.dumps(response, default=str) + "\n")
+        sys.stdout.flush()
+
+
+def _drain_line(stream) -> None:
+    """Discard the rest of an over-long request line."""
+    while True:
+        chunk = stream.readline(MAX_LINE_BYTES + 1)
+        if not chunk or chunk.endswith(b"\n"):
+            return
+
+
 def main() -> int:
-    for line in sys.stdin:
-        line = line.strip()
+    stream = sys.stdin.buffer
+    while True:
+        raw = stream.readline(MAX_LINE_BYTES + 1)
+        if not raw:
+            break
+        if len(raw) > MAX_LINE_BYTES and not raw.endswith(b"\n"):
+            _drain_line(stream)
+            _send(_error(None, -32600,
+                         f"request exceeds {MAX_LINE_BYTES} bytes"))
+            continue
+        line = raw.strip()
         if not line:
             continue
         try:
             msg = json.loads(line)
         except json.JSONDecodeError:
+            _send(_error(None, -32700, "parse error"))
             continue
-        response = handle(msg)
-        if response is not None:
-            sys.stdout.write(json.dumps(response) + "\n")
-            sys.stdout.flush()
+        if not isinstance(msg, dict):
+            _send(_error(None, -32600, "invalid request: expected a JSON object"))
+            continue
+        try:
+            response = handle(msg)
+        except Exception as exc:  # noqa: BLE001 - one bad request must not kill stdio
+            tb = traceback.format_exc() if os.environ.get("HARNESS_MCP_DEBUG") else ""
+            response = _error(msg.get("id"), -32603,
+                              f"internal error: {type(exc).__name__}: {exc}\n{tb}")
+        _send(response)
     return 0
 
 

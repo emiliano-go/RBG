@@ -201,14 +201,21 @@ class FTSBackend:
     def __init__(self, chunks: list[Chunk], search) -> None:
         self.chunks = chunks
         self._search = search
-        self._fallback = BM25(chunks)
+        # Building the in-memory scorer tokenizes the whole corpus (~18 s on a
+        # 108k-chunk monorepo).  It is only a fallback for a missing/stale FTS
+        # index, so construct it on first failure instead of on the read path.
+        self._fallback = None
 
     def rank(self, query: str, limit: int = 50) -> list[tuple[int, float]]:
         try:
             out = self._search(query, int(limit))
         except Exception:
             out = None
-        return out if out else self._fallback.rank(query, limit)
+        if out:
+            return out
+        if self._fallback is None:
+            self._fallback = BM25(self.chunks)
+        return self._fallback.rank(query, limit)
 
 
 class DenseEncoder:
@@ -268,6 +275,39 @@ class DenseEncoder:
         sims = mat @ q
         order = np.argsort(-sims)
         return [(int(i), float(sims[i])) for i in order[:limit] if sims[i] > 0]
+
+
+class LexicalOnlyEncoder:
+    """Placeholder dense leg for corpora too large to fit/encode cheaply.
+
+    Fitting ``DenseEncoder`` over ~100k chunks is a multi-minute pure-Python
+    pass that used to run inside the first MCP call and block the stdio loop.
+    Above ``LSI_MAX_CORPUS`` the lexical FTS5/BM25 leg is the useful one, so the
+    dense leg is deliberately empty instead of paying that cost on every cold
+    revision.
+    """
+
+    def __init__(self, dim: int = 512) -> None:
+        self.dim = dim
+
+    def fit(self, texts) -> "LexicalOnlyEncoder":
+        return self
+
+    def encode(self, text: str) -> np.ndarray:
+        return np.zeros(self.dim)
+
+    def rank(self, query: str, chunks: list[Chunk], limit: int = 50) -> list[tuple[int, float]]:
+        return []
+
+    def document_vectors(self, chunks: list[Chunk]) -> np.ndarray:
+        return np.zeros((0, self.dim))
+
+    def to_state(self) -> dict:
+        return {"kind": "lexical-only", "dim": self.dim}
+
+    @classmethod
+    def from_state(cls, state: dict, doc_vecs: np.ndarray) -> "LexicalOnlyEncoder":
+        return cls(dim=int(state.get("dim", 512)))
 
 
 class LSIEncoder:
@@ -526,10 +566,15 @@ class HybridRetriever:
             self.encoder = encoder
         elif (heavy := heavy_encoder()) is not None:
             self.encoder = heavy
-        elif semantic and len(index.chunks) <= LSI_MAX_CORPUS:
-            self.encoder = LSIEncoder(k=lsi_k).fit([c.content for c in index.chunks])
+        elif len(index.chunks) <= LSI_MAX_CORPUS:
+            if semantic:
+                self.encoder = LSIEncoder(k=lsi_k).fit([c.content for c in index.chunks])
+            else:
+                self.encoder = DenseEncoder(dim).fit([c.content for c in index.chunks])
         else:
-            self.encoder = DenseEncoder(dim).fit([c.content for c in index.chunks])
+            # ponytail: lexical-only above the cap; add a background/offline
+            # dense build (or an ANN vector table) if large-repo recall needs it.
+            self.encoder = LexicalOnlyEncoder(dim)
         self.reranker = reranker
         self.expansion = expansion
         self.diversify = diversify
