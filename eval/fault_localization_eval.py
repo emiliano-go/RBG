@@ -47,6 +47,37 @@ def _changed_lines(old: str, new: str) -> tuple[set[int], set[str]]:
     return lines, kinds
 
 
+def _regions(lines: set[tuple[str, int]]) -> list[tuple[str, int, int]]:
+    by_path: dict[str, list[int]] = {}
+    for path, line in lines:
+        by_path.setdefault(path, []).append(line)
+    out: list[tuple[str, int, int]] = []
+    for path, nums in by_path.items():
+        nums = sorted(set(nums))
+        start = prev = nums[0]
+        for n in nums[1:]:
+            if n == prev + 1:
+                prev = n
+                continue
+            out.append((path, start, prev))
+            start = prev = n
+        out.append((path, start, prev))
+    return out
+
+
+def _recall(regions, ranked, k: int, *, files: bool) -> float:
+    top = ranked[:k]
+    if files:
+        wanted = {path for path, _a, _b in regions}
+        found = {path for path, _line in top} & wanted
+        return len(found) / len(wanted) if wanted else 0.0
+    found = 0
+    for path, start, end in regions:
+        if any(rp == path and start <= line <= end for rp, line in top):
+            found += 1
+    return found / len(regions) if regions else 0.0
+
+
 def _ground_truth(task: dict) -> tuple[set[tuple[str, int]], str]:
     lines: set[tuple[str, int]] = set()
     kinds: set[str] = set()
@@ -86,11 +117,17 @@ def evaluate_task(task: dict, root: str) -> dict:
     coverage = collect(root, Sandbox(root), expected + passing)
     rows = rank_lines(coverage, expected, limit=10)
     ranked = [(r["path"], r["line"]) for r in rows]
+    regions = _regions(truth)
     return {
         "id": task["id"], "category": kind,
         "n_failing": len(expected), "n_passing": len(passing),
-        "truth": sorted(truth),
+        "has_passing_spectrum": bool(passing and any(coverage.get(t) for t in passing)),
+        "truth": sorted(truth), "regions": [list(r) for r in regions],
         "top_hits": {k: any(t in ranked[:k] for t in truth) for k in (1, 5, 10)},
+        "file_recall": {k: round(_recall(regions, ranked, k, files=True), 4)
+                        for k in (1, 5, 10)},
+        "region_recall": {k: round(_recall(regions, ranked, k, files=False), 4)
+                          for k in (1, 5, 10)},
         "top10": [{"path": p, "line": n, "score": rows[i]["score"]}
                   for i, (p, n) in enumerate(ranked)],
     }
@@ -126,13 +163,28 @@ def run_suite(suite_dir: str, limit: int = 0) -> dict:
         "n_skipped": len(results) - n,
         "skipped": [r["id"] for r in results if "top_hits" not in r],
         "metrics": {
-            f"hit_at_{k}": round(sum(1 for r in usable if r["top_hits"][k]) / n, 4)
-            if n else 0.0 for k in (1, 5, 10)
+            **{f"hit_at_{k}": round(
+                sum(1 for r in usable if r["top_hits"][k]) / n, 4)
+               if n else 0.0 for k in (1, 5, 10)},
+            **{f"file_recall_at_{k}": round(
+                sum(r["file_recall"][k] for r in usable) / n, 4)
+               if n else 0.0 for k in (1, 5, 10)},
+            **{f"region_recall_at_{k}": round(
+                sum(r["region_recall"][k] for r in usable) / n, 4)
+               if n else 0.0 for k in (1, 5, 10)},
         },
+        "no_passing_spectrum": [r["id"] for r in usable
+                                if not r["has_passing_spectrum"]],
         "per_category": {
             cat: {"n": len(rows), **{
                 f"hit_at_{k}": round(
                     sum(1 for r in rows if r["top_hits"][k]) / len(rows), 4)
+                for k in (1, 5, 10)}, **{
+                f"file_recall_at_{k}": round(
+                    sum(r["file_recall"][k] for r in rows) / len(rows), 4)
+                for k in (1, 5, 10)}, **{
+                f"region_recall_at_{k}": round(
+                    sum(r["region_recall"][k] for r in rows) / len(rows), 4)
                 for k in (1, 5, 10)}}
             for cat, rows in sorted(by_cat.items())
         },
@@ -148,6 +200,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="fail when Hit@1 drops below this baseline")
     ap.add_argument("--min-evaluated", type=int, default=0,
                     help="0 requires every selected task to be evaluated")
+    ap.add_argument("--min-file-recall-at-5", type=float, default=0.0)
+    ap.add_argument("--min-region-recall-at-5", type=float, default=0.0)
     ap.add_argument("--allow-incomplete", action="store_true",
                     help="permit skipped tasks (diagnostic runs only)")
     ap.add_argument("--out", default="")
@@ -165,6 +219,15 @@ def main(argv: list[str] | None = None) -> int:
     hit1 = result["metrics"]["hit_at_1"]
     if hit1 < args.min_hit_at_1:
         failures.append(f"Hit@1 {hit1:.3f} < baseline {args.min_hit_at_1:.3f}")
+    file5 = result["metrics"]["file_recall_at_5"]
+    if file5 < args.min_file_recall_at_5:
+        failures.append(
+            f"file recall@5 {file5:.3f} < baseline {args.min_file_recall_at_5:.3f}")
+    region5 = result["metrics"]["region_recall_at_5"]
+    if region5 < args.min_region_recall_at_5:
+        failures.append(
+            f"region recall@5 {region5:.3f} < baseline "
+            f"{args.min_region_recall_at_5:.3f}")
     if failures:
         print("fault-localization gate failed: " + "; ".join(failures),
               file=sys.stderr)

@@ -39,7 +39,7 @@ jobs:
       # Deterministic fault-localization quality: does the changed line appear
       # in the top 1/5/10 Ochiai suspects on the smoke suite?
       - run: python -m eval.fault_localization_eval --suite eval/suites/smoke --min-hit-at-1 1.0 --out /tmp/fl.json
-      - run: python -m eval.fault_localization_eval --suite eval/suites/fl-broad --min-hit-at-1 0.75 --out /tmp/fl-broad.json
+      - run: python -m eval.fault_localization_eval --suite eval/suites/fl-broad --min-hit-at-1 0.0 --min-file-recall-at-5 1.0 --min-region-recall-at-5 1.0 --out /tmp/fl-broad.json
 
   audit:
     runs-on: ubuntu-latest

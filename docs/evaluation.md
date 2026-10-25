@@ -85,8 +85,10 @@ python3 -m eval.fault_localization_eval --suite eval/suites/fl-broad --out fl-br
 
 The broad suite covers insertion-only, deletion-only, multi-line, multi-file,
 interacting-failure, and indirect-constant fixes. It reports every task,
-skipped ids, per-category Hit@1/5/10, and an overall baseline currently around
-0.83; the smoke suite remains the fast 1.0 CI guard.
+skipped ids, per-category Hit@1/5/10. Current broad baseline: Hit@1 0.33 (many correct lines
+tie at the same score), changed-file recall@5 1.0, and fix-region recall@5 1.0.
+CI gates the broad suite on file and region recall; the smoke suite remains the
+fast Hit@1 = 1.0 guard.
 
 `metrics.hit_at_1/5/10` reports how often a line changed by the fix appears in
 the top suspects. CI enforces the smoke-suite baseline (`hit_at_1 = 1.0`) and

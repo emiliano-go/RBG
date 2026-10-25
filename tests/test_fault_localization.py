@@ -94,3 +94,28 @@ def test_broad_suite_has_required_categories():
     assert {"indirect", "interacting"} <= cats
     ids = {t["id"] for t in data["tasks"]}
     assert {"insertion_guard", "deletion_extra_step", "multifile_pair"} <= ids
+
+
+def test_module_import_time_lines_are_attributed_to_tests(tmp_path):
+    if fl.os.environ.get("RBG_ALLOW_UNISOLATED") != "1":
+        from rbg import isolation
+        if isolation.available_backend() is None:
+            import pytest
+            pytest.skip("no isolation backend on this host")
+    (tmp_path / "config.py").write_text("LIMIT = 3\n")
+    (tmp_path / "use_config.py").write_text(
+        "from config import LIMIT\n\n\ndef allowed(n):\n    return n <= LIMIT\n")
+    (tmp_path / "test_config.py").write_text(
+        "from use_config import allowed\n\n\ndef test_large():\n    assert allowed(8)\n")
+    cov = fl.collect(str(tmp_path), Sandbox(str(tmp_path)), ["test_config.py::test_large"])
+    assert ("config.py", 1) in cov["test_config.py::test_large"]
+
+
+def test_file_and_region_recall_require_each_fix_site():
+    regions = fle._regions({("a.py", 1), ("a.py", 2), ("b.py", 5)})
+    ranked = [("a.py", 1)]
+    assert fle._recall(regions, ranked, 1, files=True) == 0.5
+    assert fle._recall(regions, ranked, 1, files=False) == 0.5
+    ranked.append(("b.py", 5))
+    assert fle._recall(regions, ranked, 2, files=True) == 1.0
+    assert fle._recall(regions, ranked, 2, files=False) == 1.0

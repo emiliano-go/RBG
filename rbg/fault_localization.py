@@ -29,7 +29,7 @@ import os
 import sys
 
 _DATA = {}
-_CUR = None
+_CUR = "<import>"
 _ROOT = os.path.realpath(os.environ.get("RBG_COVERAGE_ROOT", os.getcwd()))
 
 
@@ -53,6 +53,13 @@ def _trace(frame, event, arg):
     return _trace
 
 
+def pytest_configure(config):
+    # Collection imports modules before pytest_runtest_setup runs.  Start the
+    # tracer here and attribute import-time lines to a synthetic spectrum that
+    # the collector merges into every test.
+    sys.settrace(_trace)
+
+
 def pytest_runtest_setup(item):
     global _CUR
     _CUR = item.nodeid
@@ -66,6 +73,7 @@ def pytest_runtest_teardown(item, nextitem):
 
 
 def pytest_sessionfinish(session, exitstatus):
+    sys.settrace(None)
     path = os.environ.get("RBG_COVERAGE_FILE")
     if path:
         with open(path, "w", encoding="utf-8") as fh:
@@ -158,8 +166,15 @@ def collect(root: str, sandbox, test_ids: list[str]) -> dict[str, set[tuple[str,
                 f"coverage artifact missing (pytest exit {res.exit_code})")
         with open(host_out, encoding="utf-8") as fh:
             raw = json.load(fh)
-        return {str(t): {(str(p), int(n)) for p, n in lines}
-                for t, lines in raw.items()}
+        imported = {(str(p), int(n)) for p, n in raw.pop("<import>", [])}
+        out = {str(t): set() for t in test_ids}
+        for t, lines in raw.items():
+            out.setdefault(str(t), set()).update(
+                (str(p), int(n)) for p, n in lines)
+        if imported:
+            for lines in out.values():
+                lines.update(imported)
+        return out
     finally:
         import shutil
         shutil.rmtree(scratch, ignore_errors=True)
