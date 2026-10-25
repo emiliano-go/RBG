@@ -481,6 +481,8 @@ class ConformalCalibrator:
     """
 
     def __init__(self, base: PlattScaler | None = None, alpha: float = 0.1) -> None:
+        if not 0.0 < alpha < 1.0:
+            raise ValueError("alpha must be strictly between 0 and 1")
         self.base = base or PlattScaler()
         self.alpha = alpha
         self.qhat: float | None = None
@@ -519,8 +521,10 @@ class ConformalCalibrator:
         self.cal_scores = p_true  # kept for drift/exchangeability consumers
         self.nonconformity = scores
         if m:
-            k = min(m, max(1, math.ceil((m + 1) * (1.0 - self.alpha))))
-            self.qhat = float(np.sort(scores)[k - 1])
+            k = max(1, math.ceil((m + 1) * (1.0 - self.alpha)))
+            # k = m + 1 means the requested confidence exceeds what m samples can
+            # certify: the conformal threshold is infinite (the full set).
+            self.qhat = 1.0 if k > m else float(np.sort(scores)[k - 1])
         self.train_matrix = None if matrix is None else np.asarray(matrix, dtype=float)
         self.fitted = True
         return self

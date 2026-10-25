@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import re
 import resource
+import shutil
 import subprocess
 import tempfile
 import time
@@ -74,6 +75,7 @@ class Sandbox:
         self.network = network
         self.python = self._resolve_python(self.root)
         self.venv = self._venv_root(self.python)
+        self.runtime = self._runtime_prefixes(self.python, self.venv)
         self.python_sandbox = f"{VENV_MOUNT}/bin/python" if self.venv else self.python
         self.log: list[CommandResult] = []
         self._isolation: Isolation | None = None
@@ -82,8 +84,36 @@ class Sandbox:
         """Selected once per sandbox; raises if no backend and no escape hatch."""
         if self._isolation is None:
             binds = ((self.venv, VENV_MOUNT),) if self.venv else ()
-            self._isolation = select_isolation(self.network, self.root, binds)
+            self._isolation = select_isolation(self.network, self.root, binds,
+                                               keep=self.runtime)
         return self._isolation
+
+    @staticmethod
+    def _runtime_prefixes(python: str, venv: str | None) -> tuple[str, ...]:
+        """Host runtime directories the interpreter needs, even if masked.
+
+        Hosted CI keeps Python under ``/opt``.  /opt is masked for privacy, so
+        the base prefix (and its shared libraries) must be re-exposed at the
+        same path, while unrelated /opt contents stay hidden.
+        """
+        paths: set[str] = set()
+        if venv:
+            paths.add(os.path.realpath(venv))
+            cfg = os.path.join(venv, "pyvenv.cfg")
+            try:
+                with open(cfg, encoding="utf-8") as fh:
+                    for line in fh:
+                        key, _, value = line.partition("=")
+                        if key.strip() == "home" and value.strip():
+                            home = os.path.realpath(value.strip())
+                            paths.add(os.path.dirname(home))
+            except OSError:
+                pass
+        exe = python if os.path.exists(python) else (shutil.which(python) or python)
+        real = os.path.realpath(exe)
+        if os.path.basename(os.path.dirname(real)) == "bin":
+            paths.add(os.path.dirname(os.path.dirname(real)))
+        return tuple(sorted(p for p in paths if os.path.isdir(p)))
 
     @staticmethod
     def _venv_root(python: str) -> str | None:

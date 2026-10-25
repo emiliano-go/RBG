@@ -213,6 +213,18 @@ def test_project_under_home_with_venv_executes(tmp_path):
     assert res.stdout.strip() == "/tmp/venv"
 
 
+def test_runtime_under_a_masked_path_is_rebound(monkeypatch, tmp_path):
+    mask = tmp_path / "opt"
+    keep = mask / "python" / "x64"
+    keep.mkdir(parents=True)
+    monkeypatch.setattr(isolation, "_HOST_MASK", (str(mask),))
+    argv = isolation._wrap("bwrap", False, str(tmp_path), (), (str(keep),))
+    text = " ".join(argv)
+    assert f"--tmpfs {mask}" in text
+    assert f"--ro-bind {keep} {keep}" in text
+    assert text.index(f"--tmpfs {mask}") < text.index(f"--ro-bind {keep} {keep}")
+
+
 def test_host_data_directories_are_masked(tmp_path):
     _bwrap_only()
     res = Sandbox(str(tmp_path)).run(

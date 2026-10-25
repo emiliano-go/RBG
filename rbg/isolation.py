@@ -58,7 +58,8 @@ _HOST_MASK = ("/var", "/mnt", "/media", "/srv", "/boot", "/opt", "/run")
 
 
 def _wrap(backend: str, network: bool, root: str,
-          ro_binds: tuple[tuple[str, str], ...] = ()) -> list[str]:
+          ro_binds: tuple[tuple[str, str], ...] = (),
+          keep: tuple[str, ...] = ()) -> list[str]:
     root = os.path.realpath(root)
     if backend == "bwrap":
         argv = [
@@ -77,6 +78,11 @@ def _wrap(backend: str, network: bool, root: str,
         for path in _HOST_MASK:
             if os.path.exists(path):
                 argv += ["--tmpfs", path]
+        # Re-expose only the interpreter runtime that lives under a masked path
+        # (hosted CI puts Python in /opt); the rest of the mask stays empty.
+        for path in keep:
+            if any(_under(path, masked) for masked in _HOST_MASK):
+                argv += ["--ro-bind", path, path]
         # The candidate repo is the only writable host path inside the sandbox;
         # a project venv is mounted read-only at a stable sandbox path.
         for src, dst in ro_binds:
@@ -100,6 +106,9 @@ def _wrap(backend: str, network: bool, root: str,
     for path in _HOST_MASK:
         if os.path.exists(path):
             argv += ["--tmpfs", path]
+    for path in keep:
+        if any(_under(path, masked) for masked in _HOST_MASK):
+            argv += ["--bindmount_ro", f"{path}:{path}"]
     for src, dst in ro_binds:
         argv += ["--bindmount_ro", f"{src}:{dst}"]
     if not network:
@@ -157,12 +166,13 @@ def available_backend() -> str | None:
 
 
 def select(network: bool, root: str | None = None,
-           ro_binds: tuple[tuple[str, str], ...] = ()) -> Isolation:
+           ro_binds: tuple[tuple[str, str], ...] = (),
+           keep: tuple[str, ...] = ()) -> Isolation:
     backend = available_backend()
     workdir = os.path.realpath(root or os.getcwd())
     if backend:
         return Isolation(backend, True, not network,
-                         tuple(_wrap(backend, network, workdir, ro_binds)))
+                         tuple(_wrap(backend, network, workdir, ro_binds, keep)))
     if _truthy("RBG_ALLOW_UNISOLATED"):
         return Isolation("none", False, False, ())
     raise IsolationUnavailable(

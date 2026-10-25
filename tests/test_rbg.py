@@ -676,6 +676,18 @@ def _synthetic_ledger(root, n=24):
     return str(root), idx
 
 
+def test_conformal_rejects_invalid_alpha_and_handles_k_gt_m():
+    with pytest.raises(ValueError):
+        ConformalCalibrator(alpha=0.0)
+    with pytest.raises(ValueError):
+        ConformalCalibrator(alpha=1.0)
+    raw = [0.05 * i for i in range(20)]
+    labels = [0.0, 1.0] * 10
+    cal = ConformalCalibrator(alpha=1e-9).fit(raw, labels)
+    assert cal.qhat == 1.0
+    assert cal.predict_set(0.99) == {0, 1}
+
+
 def test_conformal_sets_are_not_trivially_both_classes():
     rng = np.random.default_rng(11)
     raw = rng.normal(size=400) * 2

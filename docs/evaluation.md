@@ -83,7 +83,9 @@ python3 -m eval.fault_localization_eval --suite eval/suites/smoke --out fl.json
 ```
 
 `metrics.hit_at_1/5/10` reports how often a line changed by the fix appears in
-the top suspects. To measure its effect on repair, A/B the live benchmark:
+the top suspects. CI enforces the smoke-suite baseline (`hit_at_1 = 1.0`) and
+requires every selected task to be evaluated; diagnostic runs can pass
+`--allow-incomplete`. To measure its effect on repair, A/B the live benchmark:
 
 ```bash
 python3 -m eval.live_benchmark --suite <held-out-suite> --repeats 3 --out without.json

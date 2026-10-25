@@ -15,6 +15,7 @@ import difflib
 import json
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 
@@ -101,6 +102,12 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="rbg-fl-eval")
     ap.add_argument("--suite", required=True)
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--min-hit-at-1", type=float, default=0.75,
+                    help="fail when Hit@1 drops below this baseline")
+    ap.add_argument("--min-evaluated", type=int, default=0,
+                    help="0 requires every selected task to be evaluated")
+    ap.add_argument("--allow-incomplete", action="store_true",
+                    help="permit skipped tasks (diagnostic runs only)")
     ap.add_argument("--out", default="")
     args = ap.parse_args(argv)
     result = run_suite(args.suite, args.limit)
@@ -109,6 +116,17 @@ def main(argv: list[str] | None = None) -> int:
         with open(args.out, "w", encoding="utf-8") as fh:
             fh.write(text + "\n")
     print(text)
+    failures: list[str] = []
+    required = args.min_evaluated or result["n_tasks"]
+    if not args.allow_incomplete and result["n_evaluated"] < required:
+        failures.append(f"evaluated {result['n_evaluated']}/{required} tasks")
+    hit1 = result["metrics"]["hit_at_1"]
+    if hit1 < args.min_hit_at_1:
+        failures.append(f"Hit@1 {hit1:.3f} < baseline {args.min_hit_at_1:.3f}")
+    if failures:
+        print("fault-localization gate failed: " + "; ".join(failures),
+              file=sys.stderr)
+        return 1
     return 0
 
 

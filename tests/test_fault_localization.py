@@ -5,6 +5,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from eval import fault_localization_eval as fle  # noqa: E402
 from rbg import fault_localization as fl  # noqa: E402
 from rbg.verify import Sandbox  # noqa: E402
 
@@ -63,3 +64,17 @@ def test_collector_does_not_clobber_repository_files(tmp_path):
     fl.collect(str(tmp_path), Sandbox(str(tmp_path)), ["test_m.py::test_f"])
     assert (tmp_path / "_rbg_coverage_plugin.py").read_text() == "sentinel plugin\n"
     assert (tmp_path / ".rbg-coverage.json").read_text() == "sentinel output\n"
+
+
+def test_evaluation_gate_fails_when_nothing_was_measured(tmp_path):
+    import json
+    suite = tmp_path / "suite"
+    suite.mkdir()
+    (suite / "suite.json").write_text(json.dumps({
+        "name": "empty",
+        "tasks": [{"id": "no-truth", "task": "x", "files": {}, "fix": {}}],
+    }))
+    out = tmp_path / "out.json"
+    rc = fle.main(["--suite", str(suite), "--out", str(out)])
+    assert rc == 1
+    assert json.loads(out.read_text())["n_evaluated"] == 0
