@@ -2,12 +2,12 @@
 
 Three tiers, in the spec's terms:
 
-1. **One generative LLM** (`MainLLM`) — writes the plan and the edits. Nothing
+1. **One generative LLM** (`MainLLM`); writes the plan and the edits. Nothing
    else in the system generates text.
-2. **Deterministic control plane** — indexing, retrieval, the repair loop,
+2. **Deterministic control plane**: indexing, retrieval, the repair loop,
    sandboxed verification, the ledger, plan/drift checks. Conventional code,
    fully replayable.
-3. **Small learned models** — risk, calibration, test selection, change impact,
+3. **Small learned models**: risk, calibration, test selection, change impact,
    reranking, flakiness. Trained from the run ledger, never generative.
 
 Storage is **libSQL / Turso** (the only supported store). It holds repo chunks,
@@ -68,7 +68,7 @@ retrieve context
 
 `missing` planned files are fed back as guidance so the repair loop closes the
 gap. Unmet steps after the last iteration are recorded as a **scope reduction**,
-never a hard failure — the compile/test gates stay authoritative for success.
+never a hard failure; the compile/test gates stay authoritative for success.
 
 The `Report` carries `plan`, `drift` (per stage + per iteration) and
 `completeness`.
@@ -88,34 +88,34 @@ The `Report` carries `plan`, `drift` (per stage + per iteration) and
   ledger. There is no plan-file edit path, so an assistant can change the plan
   without regenerating it.
 
-The checks below are deterministic — no new model, no extra LLM call.
+The checks below are deterministic; no new model, no extra LLM call.
 
-- **`parse_plan(text, known_files)`** — each line is a step (leading `-`, `*`,
+- **`parse_plan(text, known_files)`**: each line is a step (leading `-`, `*`,
   `1.`, `Step 1:` stripped). File tokens are recorded **only if they exist in
   the repo**. A step with a run/test/verify verb is `verify`, otherwise `edit`.
-- **`scope_drift(plan, changed_files)`** — planned-but-unchanged (`missing`) and
+- **`scope_drift(plan, changed_files)`**: planned-but-unchanged (`missing`) and
   changed-but-unplanned (`extra`).
-- **`git_changed(root)`** — collects modified, added, deleted, renamed, and
+- **`git_changed(root)`**: collects modified, added, deleted, renamed, and
   untracked paths directly from git, so the audit never trusts the model's own
   report of what it changed. When the root is a workspace rather than a
   checkout, nested checkouts one level down are aggregated with their directory
   prefix (`repo_1/src/a.py`), so cross-repo drift needs no caller-supplied
   `changed_files` list.
-- **`audit_document(doc, changed, root)`** — the hard gate. A declared file
+- **`audit_document(doc, changed, root)`**: the hard gate. A declared file
   that is unchanged, an unplanned write or deletion, a missing or failed
   acceptance item, or a section marked done without a passing validation
   blocks. A section that declares no scope at all is reported as unverifiable,
   not as clean.
-- **`section_validation(...)`** — the validator behind `plan_complete`. It
+- **`section_validation(...)`**: the validator behind `plan_complete`. It
   fails on any document-level blocker, so an unplanned write cannot be excused
   by completing a different section.
-- **`DriftModel`** — an optional GBDT head over the audit features. It runs in
+- **`DriftModel`**: an optional GBDT head over the audit features. It runs in
   shadow, reports `max_score`, and never overrides the deterministic verdict.
-- **`audit_completion(index, changed_symbols, changed_files, context_files)`** —
+- **`audit_completion(index, changed_symbols, changed_files, context_files)`**:
   callers of changed symbols neither edited nor retrieved. Underscore-private,
   dunder and generic method names (`run`, `to_dict`, `main`, …) are skipped: a
   bare method name collides across the tree, so it carries no task signal.
-- **`format_guidance(plan, drift)`** — repair-loop guidance for missing steps.
+- **`format_guidance(plan, drift)`**: repair-loop guidance for missing steps.
 
 Plan sections may declare `files`, `allowed_paths`, `symbols`, `artifacts`,
 `acceptance`, `intent`, and `non_goals`. Old plans without these fields still

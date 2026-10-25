@@ -2,7 +2,7 @@
 
 The static benchmark (`eval/effectiveness.py`) labels a test as "revealing" a
 symbol when the test's text mentions that symbol, then scores the selector on
-whether it finds tests that mention the symbol -- the label and the feature are
+whether it finds tests that mention the symbol; the label and the feature are
 the same signal, so it reads a near-perfect MRR that means nothing.
 
 This module instead asks the question the tool actually answers: *which tests

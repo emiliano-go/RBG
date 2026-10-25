@@ -1,4 +1,4 @@
-# RBG — Verified Control Plane for Coding Agents
+# RBG: Verified Control Plane for Coding Agents
 
 RBG is an experimental, local-first control plane for AI-assisted code changes.
 It combines repository-aware retrieval, one coding model, sandboxed
@@ -43,7 +43,7 @@ rbg retrieve /path/to/repo "where are edits applied"
 ```
 
 A run returns a `Report` with `status`, per-gate evidence, the parsed plan, drift
-findings, and `patch` — the complete diff produced in the isolated workspace.
+findings, and `patch`; the complete diff produced in the isolated workspace.
 The caller's checkout is never edited.
 
 ## How it works
@@ -103,13 +103,13 @@ reproducibility commands.
 
 ## Documentation
 
-- [Architecture](docs/architecture.md) — retrieval, control loop, plan drift
-- [MCP tools](docs/mcp-tools.md) — every tool, argument, and return
-- [Models](docs/models.md) — learned, statistical, and embedding models
-- [Configuration](docs/configuration.md) — install, roots, sandbox, model presets
-- [Evaluation](docs/evaluation.md) — benchmarks, ablations, model gates
-- [Threat model](docs/threat-model.md) — assets, boundaries, mitigations
-- [Contributing](CONTRIBUTING.md) — development setup, tests, PR expectations
+- [Architecture](docs/architecture.md): retrieval, control loop, plan drift
+- [MCP tools](docs/mcp-tools.md): every tool, argument, and return
+- [Models](docs/models.md): learned, statistical, and embedding models
+- [Configuration](docs/configuration.md): install, roots, sandbox, model presets
+- [Evaluation](docs/evaluation.md): benchmarks, ablations, model gates
+- [Threat model](docs/threat-model.md): assets, boundaries, mitigations
+- [Contributing](CONTRIBUTING.md): development setup, tests, PR expectations
 
 ## Project status
 

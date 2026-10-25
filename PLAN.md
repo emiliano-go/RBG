@@ -1,4 +1,4 @@
-# RBG Hardening & Evaluation — Full Implementation Plan
+# RBG Hardening & Evaluation: Full Implementation Plan
 
 Status: **approved**. Reviewed ground-up via the installed harness MCP
 (`retrieve_context`, `search_code`, `find_symbol`, `plan_audit`).
@@ -31,7 +31,7 @@ Status: **approved**. Reviewed ground-up via the installed harness MCP
 | P1-3 unique task id per run by default (C4) | **done** | new test; full suite 97 pass |
 | P1-4 pyproject + console scripts + CI (installs bubblewrap) | **done** | editable install + `rbg models` verified |
 | P1-5 OpenAI-compatible `MainLLM` provider (stdlib urllib) | **done** | 2 tests; full suite 99 pass |
-| P1-6 `docs/threat-model.md` + MIT `LICENSE` | **done** | — |
+| P1-6 `docs/threat-model.md` + MIT `LICENSE` | **done** | - |
 | P2-1 temporal train/cal/test split + repo holdout (D1) | **done** | 2 tests; full suite 101 pass |
 | P2-2 conformal on held-out slice; version v2 | **done** | folds into P2-1/push |
 | P2-3 n + Wilson CI on metrics (D3) | **done** | test; full suite 102 pass |
@@ -93,7 +93,7 @@ failed | needs_human_review`.
 
 ---
 
-## Phase 0 (P0) — Security boundary, honest status, readable tools
+## Phase 0 (P0): Security boundary, honest status, readable tools
 
 ### A. Sandbox & path containment
 - **A1** Replace prefix checks in `verify.py:86`, `orchestrator.py:115`,
@@ -126,7 +126,7 @@ failed | needs_human_review`.
 ### F. MCP discovery returns source
 - **F1** `search_code` merges capped `content` per hit (`MAX_OUTPUT_BYTES`);
   `find_symbol` resolves definition `content`.
-- **F2** New `read_chunk(root, path, offset, limit)` — bounded, containment-checked.
+- **F2** New `read_chunk(root, path, offset, limit)`; bounded, containment-checked.
 
 **Phase 0 DoD.** Escape/symlink tests fail hard; no shell interpolation;
 unisolated runs cannot report `verified`; zero-test and missing-checker runs
@@ -134,7 +134,7 @@ report their true state; discovery tools return readable code under caps.
 
 ---
 
-## Phase 1 (P1) — Repair-loop & cache correctness, packaging, provider
+## Phase 1 (P1): Repair-loop & cache correctness, packaging, provider
 
 ### C. State correctness
 - **C1** Snapshot tree pre-loop; `files_changed` = union of touched; `diffs` =
@@ -164,7 +164,7 @@ completes the demo task end-to-end.
 
 ---
 
-## Phase 2 (P1/P2) — Statistical validity + the benchmark that judges it
+## Phase 2 (P1/P2): Statistical validity + the benchmark that judges it
 
 ### D. Learned-model validity
 - **D1** `training.py`: temporal train/calibration/test split + repo-level
@@ -203,14 +203,14 @@ components earn further investment.
 
 ---
 
-## Workstream G — Retrieval latency (perf)
+## Workstream G: Retrieval latency (perf)
 
 **Observed.** `retrieve_context` against a large snapshot
 (`…/TrustSight/trustsight`) with a long multi-entity query is too slow:
 `"G003 coordinated adoption novelty dormancy weighting, G008 first-seen
 adoption burst, adoption_events, cycle_events last_modified"`. Separately,
 `plan_audit` on the same repo **times out** at the MCP client after several
-seconds — it is a text-only tool that should be milliseconds.
+seconds; it is a text-only tool that should be milliseconds.
 
 **Root causes (from code).**
 
@@ -219,7 +219,7 @@ seconds — it is a text-only tool that should be milliseconds.
 | G-a | Every discovery call runs `_learned()` → `train_from_ledger`: GBDT + `Reranker.lstsq` + impact + drift, incl. an O(n²·d) pairwise distance matrix, on the read path | `mcp_server.py` `_learned`; `training.py:260` |
 | G-b | `_index_fresh` walks the whole tree with `os.stat` per file every call; planned content hashing (C2) would worsen it | `index.py:211-230`, `mcp_server.py:510-516` |
 | G-c | `BM25.rank` is a pure-Python flat scan: O(query_terms × N_chunks); the existing libSQL FTS5 table is unused by retrieval | `retrieval.py:150-161`; `db.py:98` (`chunks_fts`) |
-| G-d | `expand` is O(hits × callers × N_chunks) — an inner scan of all chunks per caller | `retrieval.py:514-529` |
+| G-d | `expand` is O(hits × callers × N_chunks); an inner scan of all chunks per caller | `retrieval.py:514-529` |
 | G-e | No query-level result cache; identical queries refetch everything | `retrieval.py:464` |
 | G-f | LSI projector refits on any revision change (fit is cached only per revision) | `retrieval.py:435-438`; `mcp_server.py` `_retriever` |
 | G-g | `plan_audit` (text-only) builds the **full index** (`_index` → whole-tree `_tree_hash`) and fits the LSI retriever just to score plan scope; cold cache ⇒ multi-second ⇒ client timeout. Same for any read tool that touches `_index`/`_learned`/`_retriever`. | `mcp_server.py:189,197,204`; `index.py:211-230` |
@@ -230,7 +230,7 @@ seconds — it is a text-only tool that should be milliseconds.
   `cached` flags to `search_code`/`retrieve_context`; extend `eval/perf.py` with
   a p50/p95 latency-budget assertion including this long query.
 - **G2 Collapse the ledger scan.** Keep a `ledger_n` counter in `meta`; cache
-  `LearnedModels` by `(revision, ledger_n)`; never train inside a read tool —
+  `LearnedModels` by `(revision, ledger_n)`; never train inside a read tool.
   training is an explicit `train_models` call / background refresh.
 - **G3 Cheap freshness.** Check a metadata fingerprint (path, size, mtime ns)
   every call; compute the content fingerprint only when metadata changed, then
@@ -263,7 +263,7 @@ seconds — it is a text-only tool that should be milliseconds.
 
 **Research basis.** Parameterized dense–sparse fusion (arXiv 2609.22770);
 Hierarchical BM25, sub-linear top-k (arXiv 2608.00229); hybrid-RAG latency
-telemetry — RRF reaches ~95% of learned fusion, cross-encoder rerank adds
+telemetry; RRF reaches ~95% of learned fusion, cross-encoder rerank adds
 ~80–130 ms (tim-ponomarev/hybrid-rag, ridwanspace/hybrid-rag-reference);
 LSA partial index / incremental SVD (PMC5433746).
 
@@ -271,7 +271,7 @@ LSA partial index / incremental SVD (PMC5433746).
 (target p95 < 500 ms) and per-stage timings show where the time goes; no read
 tool triggers model training.
 
-## Workstream H — Plan document tool (create / append / done / modify / notes / check)
+## Workstream H: Plan document tool (create / append / done / modify / notes / check)
 
 The plan is a **JSON document**, not prose: a tree of sections, each with its
 own body, status, notes, and checks. `plan.py` today only parses/audits text;
@@ -281,20 +281,20 @@ this makes the plan itself a first-class, editable artifact.
 it is server-side state addressed by `(root, task_id)` and manipulated through
 MCP tools, so any assistant model can read and change it in bounded increments
 without ever regenerating the whole document. Every mutation goes through the
-tool surface — there is no "edit the plan file" path — which is what lets the
+tool surface; there is no "edit the plan file" path; which is what lets the
 same constraints as the rest of the harness apply uniformly:
 
-- **Root authorization** — `root` passes `_authorize_root` (deny by default via
+- **Root authorization**: `root` passes `_authorize_root` (deny by default via
   `RBG_ALLOWED_ROOTS`), exactly like every other tool.
-- **Containment** — the document is keyed by `(root, task_id)`; it never writes
+- **Containment**: the document is keyed by `(root, task_id)`; it never writes
   outside the store, and never touches the caller's checkout.
-- **Evidence-gated status** — `done` is never a free-text edit; it requires the
+- **Evidence-gated status**: `done` is never a free-text edit; it requires the
   model-validation gate below, same spirit as `verified` in `status.py`.
-- **Bounded operations** — append/attach are depth-capped; `modify`/`note`/
+- **Bounded operations**: append/attach are depth-capped; `modify`/`note`/
   `check` mutate one section at a time; the whole tree is only ever *read* back
   via `plan_get`/`plan_tree`. An LLM therefore makes a change by calling a tool,
   not by rewriting the plan file.
-- **Versioned** — each mutation bumps `version` and appends to `notes`, so the
+- **Versioned**: each mutation bumps `version` and appends to `notes`, so the
   ledger always has the record of who changed what.
 
 **Document shape.**
@@ -316,16 +316,16 @@ same constraints as the rest of the harness apply uniformly:
 is rejected with a structured error, keeping projection and validation bounded.
 
 **Operations** (`PlanEditor` in `plan.py`, exposed as MCP tools):
-- `plan_create(title, sections)` — new document.
-- `plan_append` / `plan_attach` — add a section or subsection under a parent
+- `plan_create(title, sections)`; new document.
+- `plan_append` / `plan_attach`; add a section or subsection under a parent
   (depth-capped).
-- `plan_complete(section_id)` — flips to `done` **only** when a model
+- `plan_complete(section_id)`; flips to `done` **only** when a model
   validation passes; otherwise stays `open`/`blocked`.
-- `plan_modify(section_id, fields)` — edit title/body/status(open|blocked|dropped).
-- `plan_note(section_id, text)` — append a timestamped note.
-- `plan_check(section_id, name, status, evidence)` — record a check result.
-- `plan_get(section_id?)` / `plan_tree()` — read the document or a subtree.
-- `plan_audit` — rollup: a parent is `done` only when all children are `done`.
+- `plan_modify(section_id, fields)`; edit title/body/status(open|blocked|dropped).
+- `plan_note(section_id, text)`; append a timestamped note.
+- `plan_check(section_id, name, status, evidence)`; record a check result.
+- `plan_get(section_id?)` / `plan_tree()`; read the document or a subtree.
+- `plan_audit`; rollup: a parent is `done` only when all children are `done`.
 
 **Model-validation gate (the core rule).** A section cannot become `done`
 until one of the configured models validates it against the section's own
@@ -351,7 +351,7 @@ id + evidence) on the section. No verdict ⇒ no `done`. Enforced in
   is no plan-file edit path), the toolset is feature-complete for incremental
   editing (`create`/`append`/`attach`/`complete`/`modify`/`note`/`check`/`get`/
   `tree`/`audit`), and every mutation is root-authorized, containment-checked,
-  version-bumped and recorded in the ledger — so an assistant can change the
+  version-bumped and recorded in the ledger; so an assistant can change the
   plan without regenerating it.
 
 This pulls Stage 1's "structured plans" forward and makes the plan the tool's
@@ -361,9 +361,9 @@ own source of truth.
 
 | ID | Task | Files | Depends |
 |---|---|---|---|
-| P0-1 | `paths.py` + replace 3 prefix checks | paths.py, verify.py, orchestrator.py, mcp_server.py | — |
+| P0-1 | `paths.py` + replace 3 prefix checks | paths.py, verify.py, orchestrator.py, mcp_server.py | - |
 | P0-2 | argv + `shell=False` + call sites | verify.py, orchestrator.py, mcp_server.py | P0-1 |
-| P0-3 | env allowlist | verify.py | — |
+| P0-3 | env allowlist | verify.py | - |
 | P0-4 | `isolation.py`, wire into run, ledger field | isolation.py, verify.py, orchestrator.py | P0-2 |
 | P0-5 | disposable worktree | orchestrator.py, db.py | P0-1 |
 | P0-6 | allowed roots, deny-by-default | mcp_server.py | P0-1 |
@@ -371,11 +371,11 @@ own source of truth.
 | P0-8 | language-aware `checks.py` | checks.py, orchestrator.py | P0-2 |
 | P0-9 | discovery snippets + `read_chunk` | mcp_server.py, retrieval.py | P0-6 |
 | P1-1 | loop snapshot + union diff | orchestrator.py | P0-7 |
-| P1-2 | content fingerprint + cache eviction | index.py, mcp_server.py | — |
-| P1-3 | unique task ids | orchestrator.py | — |
-| P1-4 | pyproject + CI + `rbg` | pyproject.toml, ci.yml, __main__.py | — |
+| P1-2 | content fingerprint + cache eviction | index.py, mcp_server.py | - |
+| P1-3 | unique task ids | orchestrator.py | - |
+| P1-4 | pyproject + CI + `rbg` | pyproject.toml, ci.yml, __main__.py | - |
 | P1-5 | real LLM provider | providers.py | P1-4 |
-| P1-6 | threat model + license | docs/, LICENSE | — |
+| P1-6 | threat model + license | docs/, LICENSE | - |
 | P2-1 | temporal/repo splits | training.py, db.py | P1-1 |
 | P2-2 | conformal fix | models.py | P2-1 |
 | P2-3 | metrics + CI reporting | training.py, drift.py | P2-2 |
@@ -395,12 +395,12 @@ own source of truth.
 | G9 | dense-first routing for non-identifier queries | retrieval.py | **superseded by G4** (FTS5 removed the full lexical scan G9 routed around; RRF already fuses dense) |
 | G10 | read-path budget; plan_audit never builds index; degraded results | mcp_server.py | **done** (plan_audit drops retriever; degraded flag) |
 | G11 | lazy index/retriever + per-call timeout_ms | mcp_server.py, index.py | **done** (index/retriever already lazy; timeout_ms per call) |
-| H1 | JSON PlanDocument/PlanSection (depth cap 5) + PlanEditor | plan.py | — | — **done**: PlanDocument/PlanSection + PlanEditor (depth cap 5)
-| H2 | model-validation gate on complete via MainLLM | plan.py, providers | H1 | — **done**: model-validation gate on complete (verdict required)
-| H3 | plan_create/append/attach/complete/modify/note/check/get tools | mcp_server.py, db.py | H1, H2 | — **done**: plan_create/append/attach/complete/modify/note/check/get/tree/audit tools, persisted per (root, task_id)
-| H4 | plan_audit consumes JSON doc + rollup + back-compat text | plan.py, mcp_server.py | H1 | — **done**: plan_audit consumes stored JSON doc; text path retained
-| H5 | plan editor tests (depth cap, validation gate, rollup) | tests/test_plan_editor.py | H1, H2 | — **done**: tests in test_rbg.py (depth cap, gate, rollup, persist)
-| H6 | MCP-owned plan: store is source of truth, complete incremental toolset, no file-edit path | mcp_server.py, db.py, plan.py | H3 | — **done**: MCP owns the plan; mutations versioned and ledgered
+| H1 | JSON PlanDocument/PlanSection (depth cap 5) + PlanEditor | plan.py | - | **done**: PlanDocument/PlanSection + PlanEditor (depth cap 5)
+| H2 | model-validation gate on complete via MainLLM | plan.py, providers | H1 | **done**: model-validation gate on complete (verdict required)
+| H3 | plan_create/append/attach/complete/modify/note/check/get tools | mcp_server.py, db.py | H1, H2 | **done**: plan_create/append/attach/complete/modify/note/check/get/tree/audit tools, persisted per (root, task_id)
+| H4 | plan_audit consumes JSON doc + rollup + back-compat text | plan.py, mcp_server.py | H1 | **done**: plan_audit consumes stored JSON doc; text path retained
+| H5 | plan editor tests (depth cap, validation gate, rollup) | tests/test_plan_editor.py | H1, H2 | **done**: tests in test_rbg.py (depth cap, gate, rollup, persist)
+| H6 | MCP-owned plan: store is source of truth, complete incremental toolset, no file-edit path | mcp_server.py, db.py, plan.py | H3 | **done**: MCP owns the plan; mutations versioned and ledgered
 
 ## Test plan (new)
 
@@ -419,7 +419,7 @@ not replaced.
 - `Sandbox.run` signature change is breaking for `run_checks` profile strings;
   update in the same commit.
 - Deny-by-default roots require `RBG_ALLOWED_ROOTS` in the opencode MCP
-  config for the installed `rbg` entry, or all tools error — document in
+  config for the installed `rbg` entry, or all tools error; document in
   README quickstart.
 
 ## Risks
@@ -442,7 +442,7 @@ not replaced.
 4. Models train/calibrate on held-out data, report n+CI, stay shadow until the
    benchmark clears them.
 5. `rbg eval` reproduces a published ablation across revisions; the provider
-   completes a task end-to-end. — **done** via `rbg replay` (recorded
+   completes a task end-to-end. **done** via `rbg replay` (recorded
    session-model transcript, same `parse_edits` contract as a live provider);
    `examples/replay` fails before, passes after, under bwrap. Blind ablation
    on the 50-task suite: `blind-baseline` 0/50 (recall 0) vs `blind-full`
@@ -483,25 +483,25 @@ suite's recall@1 0.259), then #1 (closes the "verified ≠ correct" gap), then #
 (validation only, no new head), then #3 (optional, gated on #2's retrieval
 gains proving insufficient).
 
-### N2 — Experience / fix memory over the ledger (zero new deps)
+### N2: Experience / fix memory over the ledger (zero new deps)
 
 Idea (SWE-Exp, arXiv:2507.23361): a bank of prior (issue → fix) experiences,
 retrieved by dense similarity, improves fault localisation and patch quality;
-**retrieving N=1 experience is optimal** (More is not better — quality beats
+**retrieving N=1 experience is optimal** (More is not better; quality beats
 quantity). We already record every run and already have a libSQL vector index.
 
 | Step | Change | File | Status |
 |---|---|---|---|
 | N2-1 | `experiences(id, task_id, repo_id, revision, query, outcome, summary, vector F32_BLOB(512))` + `experiences_idx` (libsql_vector_idx); `save_experience` / `search_experiences` (insert-only, drop-and-recreate discipline like `save_vectors`) | `rbg/db.py` | **done** |
-| N2-2 | `experience_encoder()` — an **unfit** `DenseEncoder(512)` (idf defaults to 1.0, so it is deterministic and cross-repo comparable without a per-repo fit) | `rbg/retrieval.py` | **done** |
+| N2-2 | `experience_encoder()`; an **unfit** `DenseEncoder(512)` (idf defaults to 1.0, so it is deterministic and cross-repo comparable without a per-repo fit) | `rbg/retrieval.py` | **done** |
 | N2-3 | `Orchestrator(use_experience=True)`: at intake, retrieve top-1 prior experience and prepend as a synthetic `Hit(reason="experience")`; at run end, write `(task → plan + files_changed + diff summary, outcome)` | `rbg/orchestrator.py` | **done** |
 | N2-4 | A/B knob: `BenchConfig.use_experience` + `full-noexp` config; `ledger_farm --no-experience` (shared root ⇒ real cross-task effect) with `resolution_rate` | `eval/benchmark.py`, `eval/ledger_farm.py` | **done** |
 | N2-5 | Test: encoder unfit+deterministic; nearest-and-cap-at-1; orchestrator injects the prior experience | `tests/test_rbg.py` | **done** (3 tests) |
 
-### N1 — Patch-correctness / overfitting classifier (zero new deps)
+### N1: Patch-correctness / overfitting classifier (zero new deps)
 
 The oracle is "tests passed"; an overfitting patch passes too (ODS,
-arXiv:1910.12057; Leopard/Panther, arXiv:2203.08912 — static engineered
+arXiv:1910.12057; Leopard/Panther, arXiv:2203.08912; static engineered
 features + gradient boosting reach ~AUC 0.77–0.82). We reuse the existing
 regression label as the supervision proxy and add features the risk head does
 **not** have (otherwise it is redundant with `risk`).
@@ -514,19 +514,19 @@ regression label as the supervision proxy and add features the risk head does
 | N1-4 | Ledger component `patch_features` (always logged); orchestrator surfaces `report.patch_risk`, forces full suite + reason code `patch_regression_risk` when high | `rbg/orchestrator.py` | **done** |
 | N1-5 | Test: test-editing patch scores higher; `patch_examples` labels a green→red test as 1 | `tests/test_rbg.py` | **done** (2 tests) |
 
-### N4 — Predictive test selection validation (zero new deps)
+### N4: Predictive test selection validation (zero new deps)
 
 | Step | Change | File | Status |
 |---|---|---|---|
 | N4-1 | PTS operating point: `recall_at_third` (revealing tests recovered in the top suite-third) + `budget_tests` | `eval/effectiveness.py` | **done** |
 | N4-2 | Test: selector beats alphabetical at the third budget on a fixture | `tests/test_rbg.py` | **done** |
 
-### N3 — Optional heavier retrievers (optional extra only)
+### N3: Optional heavier retrievers (optional extra only)
 
 | Step | Change | File | Status |
 |---|---|---|---|
 | N3-1 | `[project.optional-dependencies] semantic = ["transformers", "torch"]` | `pyproject.toml` | **done** |
-| N3-2 | `rbg/retrieval_heavy.py`: `CrossEncoderReranker` duck-typing `Reranker.rerank`, graceful linear fallback; `available()` guard. (Encoder slot deferred — larger interface, do it only if the reranker gain proves insufficient.) | `rbg/retrieval_heavy.py` | **done** |
+| N3-2 | `rbg/retrieval_heavy.py`: `CrossEncoderReranker` duck-typing `Reranker.rerank`, graceful linear fallback; `available()` guard. (Encoder slot deferred; larger interface, do it only if the reranker gain proves insufficient.) | `rbg/retrieval_heavy.py` | **done** |
 | N3-3 | `--reranker heavy` adds a `hybrid+ce` mode; CI stays numpy-only (absent extra ⇒ fallback) | `eval/retrieval_ablation.py` | **done** |
 
 **Definition of done:** all four land behind their gates; `numpy`+`libsql`-only
@@ -547,7 +547,7 @@ change the outcome, and `BlindLLM` edits only paths named in retrieval hits
 (the experience Hit's path is the synthetic `<prior-fix>`, not a real file).
 Experience recall is therefore proven at the unit level (injection + bank
 round-trip) and by design; a resolution delta needs a live generative model
-that reads context — the same reason the SWE-bench adapter is manual. The patch
+that reads context; the same reason the SWE-bench adapter is manual. The patch
 head likewise has no farm signal (oracle runs all pass, blind runs never reach
 the test stage), so it trains only on a ledger containing real regressions.
 

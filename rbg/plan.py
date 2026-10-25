@@ -357,7 +357,7 @@ class PlanEditor:
     ``validator`` is an optional callable ``(section) -> {verdict, evidence}``
     used by :meth:`complete`; when it is absent a caller must pass an explicit
     ``validation`` object.  Either way ``done`` is refused without a passing
-    verdict -- the gate is a constraint, not advice.
+    verdict; the gate is a constraint, not advice.
     """
 
     def __init__(self, doc: PlanDocument, validator=None) -> None:

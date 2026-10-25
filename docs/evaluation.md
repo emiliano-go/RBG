@@ -3,7 +3,7 @@
 The suites below are **oracle-controlled mechanism tests**, not live-model
 benchmarks. `OracleLLM` already knows the correct edit, and `BlindLLM` restricts
 that known edit to files retrieval surfaced. Results therefore measure
-retrieval, plan-drift feedback, and verification — not whether a real LLM can
+retrieval, plan-drift feedback, and verification; not whether a real LLM can
 repair real tasks. Use the live-model benchmark for that claim; it records
 resolution, regressions, verification coverage, latency, tokens, and optional
 cost for real model runs.

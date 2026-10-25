@@ -127,7 +127,7 @@ class Orchestrator:
         reranker = self.learned.reranker if self.learned else None
         return HybridRetriever(self.index, reranker=reranker if self.use_reranker else None)
 
-    # -- helpers ----------------------------------------------------------- #
+    # - helpers ----------------------------------------------------------- #
     def _log(self, component: str, result: dict, *, model_name: str, task_id: str,
              reasons: list[str] | None = None, **kw) -> dict:
         return self.ledger.record(
@@ -215,7 +215,7 @@ class Orchestrator:
                     tests.append({"test_id": path, "duration": 1.0, "history": []})
         return tests
 
-    # -- main entry -------------------------------------------------------- #
+    # - main entry -------------------------------------------------------- #
     def _rerun_flaky_failures(self, failed: list[TestOutcome], outcomes: list[TestOutcome],
                               report: Report, task_id: str) -> list[TestOutcome]:
         """Execute the ``rerun_flaky_failure`` action (spec 5.7): a failure with
@@ -238,7 +238,7 @@ class Orchestrator:
             remaining.append(o)
         return remaining
 
-    # -- experience memory (SWE-Exp) --------------------------------------- #
+    # - experience memory (SWE-Exp) --------------------------------------- #
     EXPERIENCE_PATH = "<prior-fix>"
 
     def _recall_experience(self, task: str, task_id: str) -> Hit | None:

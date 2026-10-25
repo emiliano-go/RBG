@@ -68,7 +68,7 @@ def nl_queries(index: RepoIndex, min_terms: int = 3) -> list[tuple[str, tuple[st
     references the symbol* (its docstring and comments), with every term that
     also occurs in the target chunk removed.  The target provably does not
     contain the query string, so only genuine semantic / co-occurrence matching
-    can recover it -- which is exactly what LSA claims to add.
+    can recover it; which is exactly what LSA claims to add.
     """
     defs: dict[str, int] = {}
     chunk_tokens = [set(tokenize(c.content)) for c in index.chunks]
@@ -138,7 +138,7 @@ def grep_literal_order(query: str, chunks, k: int = 30) -> list[int]:
 
 def grep_terms_order(query: str, chunks, k: int = 30) -> list[int]:
     """Generous grep: OR of query tokens, ranked by how many tokens a chunk
-    contains.  No IDF, no fusion, no semantics -- the lexical floor."""
+    contains.  No IDF, no fusion, no semantics; the lexical floor."""
     toks = set(tokenize(query)) or {query.lower()}
     scored = []
     for i, c in enumerate(chunks):

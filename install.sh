@@ -39,7 +39,9 @@ for arg in "$@"; do
   esac
 done
 if [ "$want_root" -eq 1 ]; then
-  set -- "$@" --root "$PWD"
+  args=("$@")
+  args+=(--root "$PWD")
+  exec rbg install "${args[@]}"
 fi
 
 exec rbg install "$@"

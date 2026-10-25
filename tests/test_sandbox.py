@@ -72,7 +72,7 @@ def test_symlink_inside_root_is_allowed(tmp_path):
     assert resolve_within(str(root), "alias.py") == str(root / "real.py")
 
 
-# -- environment allowlist -------------------------------------------------- #
+# - environment allowlist -------------------------------------------------- #
 def test_unnamed_secret_is_stripped(tmp_path, monkeypatch):
     sb = Sandbox(str(tmp_path))
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "leak")
@@ -98,7 +98,7 @@ def test_sandbox_rejects_shell_string(tmp_path):
         sb.run("echo hi")
 
 
-# -- isolation -------------------------------------------------------------- #
+# - isolation -------------------------------------------------------------- #
 def test_isolation_is_applied_when_backend_exists(tmp_path):
     if isolation.available_backend() is None:
         pytest.skip("no isolation backend on this host")
@@ -123,7 +123,7 @@ def test_unisolated_hatch_marks_result(tmp_path, monkeypatch):
     assert res.ok and res.isolated is False and res.isolation == "none"
 
 
-# -- fixed workspace mount -------------------------------------------------- #
+# - fixed workspace mount -------------------------------------------------- #
 def _bwrap_only():
     if isolation.available_backend() is None:
         pytest.skip("no isolation backend on this host")
@@ -164,7 +164,7 @@ def test_subdirectory_cwd_is_translated(tmp_path):
     assert res.ok and res.stdout.strip() == f"{isolation.WORKSPACE}/sub"
 
 
-# -- project virtualenvs under the fixed mount ------------------------------ #
+# - project virtualenvs under the fixed mount ------------------------------ #
 def _make_venv(path):
     import subprocess
     subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(path)],

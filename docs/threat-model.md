@@ -29,7 +29,7 @@ a deterministic gate.
 
 1. **A malicious or compromised repository.** A checkout may ship a hostile
    `Makefile`, `conftest.py`, or `package.json` that runs arbitrary code. The
-   harness will execute the project's own checks — that is the point — so they
+   harness will execute the project's own checks; that is the point; so they
    are executed **inside the sandbox**, with the network off and the environment
    stripped to the allowlist. Reading is safe; running is confined.
 2. **A hostile LLM reply.** Plans and edits are parsed, path-checked, and only

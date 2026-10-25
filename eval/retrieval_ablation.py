@@ -1,6 +1,6 @@
 """Recall ablation for the retriever: lexical vs dense vs hybrid.
 
-Retrieval only -- no orchestrator, no sandbox -- so it is fast and
+Retrieval only; no orchestrator, no sandbox; so it is fast and
 deterministic.  Point it at the distractor-injected hard suite to see the
 reciprocal-rank fusion actually earning its keep:
 

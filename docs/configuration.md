@@ -26,10 +26,10 @@ rbg install --uninstall            # remove the entry
 | `opencode` | `~/.config/opencode/opencode.json` | `./opencode.json` |
 | `claude` | `~/.claude.json` | `./.mcp.json` |
 | `cursor` | `~/.cursor/mcp.json` | `./.cursor/mcp.json` |
-| `windsurf` | `~/.codeium/windsurf/mcp_config.json` | — |
+| `windsurf` | `~/.codeium/windsurf/mcp_config.json` | - |
 | `gemini` | `~/.gemini/settings.json` | `./.gemini/settings.json` |
 | `codex` | `~/.codex/config.toml` | `./.codex/config.toml` |
-| `vscode` | — | `./.vscode/mcp.json` |
+| `vscode` | - | `./.vscode/mcp.json` |
 
 The server **denies every repository by default**. The generated entry sets
 `RBG_ALLOWED_ROOTS` to exactly the directories passed with `--root` (or the

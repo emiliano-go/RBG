@@ -1,8 +1,8 @@
 # Models
 
-Every model below is small and deterministic given its inputs — learned heads
+Every model below is small and deterministic given its inputs; learned heads
 are fitted from the ledger, encoders are either fixed hashing/SVD or pinned
-offline checkpoints. None of them generate text — the LLM is the only
+offline checkpoints. None of them generate text; the LLM is the only
 generator. Each model is advisory unless it is the deterministic gate named in
 its row.
 
@@ -17,7 +17,7 @@ its row.
 | **TestSelector** | Ranker | Ranks tests by relevance to changed symbols (token overlap + learned weights). | `rank(tests, changed_symbols)` → `[TestRank]` |
 | **FlakyModel** | Flakiness predictor | Estimates P(flaky) from a test's pass/fail history and duration. | `predict(history, duration)` |
 | **ChangeImpactModel** | Symbol × test impact | Predicts which tests a symbol change affects, from symbol and test tokens. | `predict(symbol, test_path, test_tokens, ...)` |
-| **PatchCorrectnessModel** | Static patch risk | P(regression) from patch shape (test edits, trivial changes, context overlap, size) — the "passing tests ≠ correct patch" signal (ODS/Leopard-style). | `predict(features)`, `train(X, y)` |
+| **PatchCorrectnessModel** | Static patch risk | P(regression) from patch shape (test edits, trivial changes, context overlap, size); the "passing tests ≠ correct patch" signal (ODS/Leopard-style). | `predict(features)`, `train(X, y)` |
 | **Reranker** | Linear feature reranker | Reorders retrieval hits using query/chunk features; trained from ledger relevance. | `score(query, chunk)`, `rerank(...)`, `train(examples)` |
 | **CrossEncoderReranker** | Optional code cross-encoder | Heavier reranker behind the `semantic` extra; falls back to `Reranker`. | `rerank(query, hits, chunks)` |
 | **DriftModel** | Shadow GBDT head over audit features | Scores plan-audit features (`drift_features`) to predict scope drift; reports `max_score` only and never overrides the deterministic audit verdict. | `fit(X, y)`, `predict(X)` |
@@ -43,7 +43,7 @@ into context (SWE-Exp; N=1 retrieval). Encoder is `experience_encoder()` in
 Supporting types: `TaskFeatures` (the feature vector fed to GBDT/impact),
 `Decision` (a chosen action + rationale), `TestRank` (a ranked test),
 `select_action(*, has_failures, full_suite_required, full_suite_ran, uncertainty,
-ood)` — the deterministic fallback the learned policy refines.
+ood)`; the deterministic fallback the learned policy refines.
 
 #### The action menu
 
@@ -83,8 +83,8 @@ coverage within tolerance of the target. The verdict is stored keyed by
 and is discarded when the tree or ledger moves on.
 
 `eval/ledger_farm.py` produces the ledger that gate needs: it runs each suite
-task twice into one root — once with retrieval off (fails, conditioning label)
-and once with the oracle fix (resolves) — interleaved so the temporal split has
+task twice into one root; once with retrieval off (fails, conditioning label)
+and once with the oracle fix (resolves); interleaved so the temporal split has
 both classes, then trains and validates.
 
 ```bash

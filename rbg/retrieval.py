@@ -65,7 +65,7 @@ def _stable_hash(token: str, dim: int) -> tuple[int, float]:
     """Deterministic signed feature hash.
 
     Python's built-in ``hash`` is salted per process (PYTHONHASHSEED), so the
-    old encoder produced *different* rankings on every process start -- a silent
+    old encoder produced *different* rankings on every process start; a silent
     correctness bug for anything that compares or caches retrieval results.  A
     fixed digest makes the encoder reproducible.
     """
@@ -395,7 +395,7 @@ class LSIEncoder:
         """Re-embed documents against the existing projector without a new SVD.
 
         Doc vectors are ``X^T proj`` (sparse), so a revision change reuses the
-        vocabulary basis and only re-encodes the changed corpus -- no QR/SVD.
+        vocabulary basis and only re-encodes the changed corpus; no QR/SVD.
         Falls back to a full fit when there is no projector to reuse.
         """
         if self.proj is None or self.proj.shape[0] == 0:
@@ -548,7 +548,7 @@ class HybridRetriever:
     reciprocal-rank fusion, with optional query expansion, reranking and MMR
     diversification.
 
-    This is the retrieval half of RAG -- it is what feeds the single generative
+    This is the retrieval half of RAG; it is what feeds the single generative
     LLM (spec 5.2).  ``semantic=True`` swaps the lexical hashing encoder for the
     LSA encoder; ``expansion`` adds RM3-lite pseudo-relevance feedback;
     ``diversify`` applies MMR so the context is not three near-duplicate chunks

@@ -142,7 +142,7 @@ def _regression_outcomes(entries: list[dict]):
     """Per task, label each test outcome as regression evidence.
 
     A test is a positive example (worth selecting) when it *fails now but had
-    not failed earlier in the ledger* -- i.e. the change is what broke it.  A
+    not failed earlier in the ledger*, i.e. the change is what broke it.  A
     test that was already red, or that passes, is labelled 0; a historical
     failure is not evidence that a change needs this test.  Only the latest
     verifier entry per task is used, matching the per-task join elsewhere.
@@ -366,7 +366,7 @@ class RiskSplit:
 
     ``mode`` is ``"temporal"`` when there was enough history to hold the
     calibration slice out of training, and ``"in_sample"`` when the ledger is
-    too thin to split -- in which case metrics are honestly marked as such
+    too thin to split; in which case metrics are honestly marked as such
     rather than presented as held-out.
     """
     X_train: np.ndarray

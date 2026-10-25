@@ -48,7 +48,7 @@ def _repo(tmp_path):
     return RepoIndex.build(str(tmp_path))
 
 
-# -- retrieval -------------------------------------------------------------- #
+# - retrieval -------------------------------------------------------------- #
 def test_bm25_ranks_relevant_first():
     import tempfile
     from pathlib import Path
@@ -183,7 +183,7 @@ def test_mmr_prefers_a_distinct_document():
     assert set(chosen) == {0, 2}  # relevance picks 0, diversity drops the duplicate 1
 
 
-# -- models ----------------------------------------------------------------- #
+# - models ----------------------------------------------------------------- #
 def test_gbdt_learns_separable_function():
     rng = np.random.default_rng(1)
     X = rng.normal(size=(500, 4))
@@ -241,7 +241,7 @@ def test_flaky_model():
     assert FlakyModel().predict([True, True, True, True]) == 0.0
 
 
-# -- verification sandbox --------------------------------------------------- #
+# - verification sandbox --------------------------------------------------- #
 def test_sandbox_blocks_escape_and_runs(tmp_path):
     sb = Sandbox(str(tmp_path))
     out = sb.run(["python3", "-c", "print('hi')"])
@@ -271,7 +271,7 @@ def test_parse_pytest_extracts_outcomes():
     assert any(o.status == "failed" for o in outcomes)
 
 
-# -- end to end ------------------------------------------------------------- #
+# - end to end ------------------------------------------------------------- #
 def test_end_to_end_demo_verifies(tmp_path):
     root = str(tmp_path / "repo")
     _make_demo_repo(root)
@@ -310,7 +310,7 @@ def test_failed_tests_feed_fault_context_into_a_repair_attempt(tmp_path, monkeyp
     assert report.faults and report.faults[0]["path"] == "shop.py"
 
 
-# -- experience memory (SWE-Exp) -------------------------------------------- #
+# - experience memory (SWE-Exp) -------------------------------------------- #
 def test_experience_encoder_is_unfit_and_deterministic():
     from rbg.retrieval import EXPERIENCE_DIM, experience_encoder
     enc = experience_encoder()
@@ -351,7 +351,7 @@ def test_orchestrator_injects_prior_experience(tmp_path):
     assert Orchestrator.EXPERIENCE_PATH in seen["paths"]
 
 
-# -- patch correctness ------------------------------------------------------ #
+# - patch correctness ------------------------------------------------------ #
 def test_patch_features_flag_test_edits_and_heuristic():
     from rbg.models import PATCH_FEATURE_NAMES, PatchCorrectnessModel, patch_features
     clean = {"shop.py": ("def f():\n    return 1\n", "def f():\n    return 2\n")}
@@ -487,7 +487,7 @@ def test_edits_run_in_disposable_worktree(tmp_path):
 
 
 
-# -- MCP server facade ------------------------------------------------------ #
+# - MCP server facade ------------------------------------------------------ #
 def _call(name, arguments):
     return mcp_server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                               "params": {"name": name, "arguments": arguments}})
@@ -548,7 +548,7 @@ def test_mcp_notifications_and_propose_patch_never_write(tmp_path):
     assert open(os.path.join(root, "shop.py")).read() == before
 
 
-# -- root authorization (deny by default) ----------------------------------- #
+# - root authorization (deny by default) ----------------------------------- #
 def test_mcp_root_denied_without_allowlist(tmp_path, monkeypatch):
     root = str(tmp_path / "repo")
     _make_demo_repo(root)
@@ -590,7 +590,7 @@ def test_authorize_root_rejects_sibling_prefix(tmp_path, monkeypatch):
         mcp_server._authorize_root(str(tmp_path / "ab"))
 
 
-# -- index hardening (gitignore, constants, interpreter) -------------------- #
+# - index hardening (gitignore, constants, interpreter) -------------------- #
 def test_index_honors_gitignore(tmp_path):
     import subprocess
     repo = tmp_path / "g"
@@ -634,7 +634,7 @@ def test_retrieve_returns_content(tmp_path):
     assert hits and all(h.content for h in hits)
 
 
-# -- learned components (wired MLs) ----------------------------------------- #
+# - learned components (wired MLs) ----------------------------------------- #
 def _synthetic_ledger(root, n=24):
     """Write a ledger rich enough to train every model, return (root, index)."""
     root.mkdir(parents=True, exist_ok=True)
@@ -814,7 +814,7 @@ def test_mcp_train_models_and_calibration(tmp_path):
     assert "predicted_affected" in imp["impact"]["compute"]
 
 
-# -- drift monitoring (spec 5.8) -------------------------------------------- #
+# - drift monitoring (spec 5.8) -------------------------------------------- #
 def test_psi_is_zero_for_same_distribution_and_large_for_shift():
     rng = np.random.default_rng(0)
     a = rng.normal(size=500)
@@ -876,7 +876,7 @@ def test_nl_queries_are_non_leaky(tmp_path):
         assert not any(t in target.content.lower() for t in query.split()), query
 
 
-# -- libSQL persistence layer (mandatory: Turso is the only store) ---------- #
+# - libSQL persistence layer (mandatory: Turso is the only store) ---------- #
 from rbg import db as hdb  # noqa: E402
 
 
@@ -1177,7 +1177,7 @@ def test_mcp_db_tools_and_resources(tmp_path):
     assert prompt["result"]["messages"][0]["content"]["type"] == "text"
 
 
-# -- spec gap closure: real decision features, action menu, retriever contract #
+# - spec gap closure: real decision features, action menu, retriever contract #
 def test_select_action_is_drawn_from_the_menu():
     cases = [
         ("run_full_suite", select_action(has_failures=True, full_suite_required=True,
@@ -1292,7 +1292,7 @@ def test_index_cache_invalidates_after_edit(tmp_path):
     assert second["index_fresh"] is True
 
 
-# -- plan + step-level drift checks ----------------------------------------- #
+# - plan + step-level drift checks ----------------------------------------- #
 def test_parse_plan_extracts_steps_and_files():
     from rbg.plan import parse_plan
     known = {"shop.py", "test_shop.py", "src/a.py"}
@@ -1327,7 +1327,7 @@ def test_audit_completion_flags_unedited_callers(tmp_path):
 
 
 class _GreedyPlanLLM:
-    """Plans two edits but only performs one — the missed step must surface."""
+    """Plans two edits but only performs one; the missed step must surface."""
     def plan(self, task, context):
         return "1. Edit shop.py.\n2. Edit test_shop.py."
 
@@ -1387,7 +1387,7 @@ def test_audit_completion_skips_generic_and_high_fanin_symbols(tmp_path):
     assert comp["affected_not_edited"] == ["caller.py"], comp
 
 
-# -- real LLM provider (OpenAI-compatible) ---------------------------------- #
+# - real LLM provider (OpenAI-compatible) ---------------------------------- #
 def test_parse_edits_accepts_fences_lists_and_bare_objects():
     from rbg.providers import parse_edits
     fenced = 'here you go\n```json\n{"edits": [{"path": "a.py", "content": "x = 1\\n"}]}\n```\ndone'
@@ -1407,7 +1407,7 @@ def test_openai_compatible_llm_maps_reply_to_edit_ops(monkeypatch):
     assert [(o.path, o.content) for o in ops] == [("shop.py", "y")]
 
 
-# -- temporal split + repo holdout ------------------------------------------ #
+# - temporal split + repo holdout ------------------------------------------ #
 def test_risk_split_is_temporal_with_held_out_calibration(tmp_path, monkeypatch):
     base = tmp_path / "g"
     base.mkdir()
@@ -1431,7 +1431,7 @@ def test_thin_ledger_marks_in_sample_split(tmp_path, monkeypatch):
     assert m.metrics["risk"]["split"] == "in_sample"
 
 
-# -- metric intervals ------------------------------------------------------- #
+# - metric intervals ------------------------------------------------------- #
 def test_wilson_ci_and_metric_intervals(tmp_path, monkeypatch):
     from rbg.training import wilson_ci
     lo, hi = wilson_ci(50, 100)
@@ -1446,7 +1446,7 @@ def test_wilson_ci_and_metric_intervals(tmp_path, monkeypatch):
     assert len(r["positive_rate_ci"]) == 2
 
 
-# -- selector labels are regression evidence, not historical failure -------- #
+# - selector labels are regression evidence, not historical failure -------- #
 def test_selector_labels_mark_only_new_regressions():
     from rbg.training import selector_examples
     entries = [
@@ -1465,7 +1465,7 @@ def test_selector_labels_mark_only_new_regressions():
     assert pairs == [("x", 0), ("y", 0), ("x", 1), ("y", 0)]  # first y failure is inconclusive; y already red at t1
 
 
-# -- deterministic benchmark harness ---------------------------------------- #
+# - deterministic benchmark harness ---------------------------------------- #
 def test_benchmark_smoke_suite_and_compare():
     import os
 
@@ -1505,7 +1505,7 @@ def test_mcp_run_checks_compile_passes_under_the_sandbox(tmp_path):
     assert sc["exit_code"] == 0, sc.get("stdout_tail") or sc.get("stderr_tail")
 
 
-# -- read path never trains ------------------------------------------------ #
+# - read path never trains ------------------------------------------------ #
 def test_read_path_does_not_train_models(tmp_path):
     from rbg import db as hdb
     root, _ = _synthetic_ledger(tmp_path / "noretrain")
@@ -1645,7 +1645,7 @@ def test_warm_start_after_revision_change(tmp_path):
     assert sc["results"]
 
 
-# -- JSON plan document (Workstream H) ------------------------------------- #
+# - JSON plan document (Workstream H) ------------------------------------- #
 def test_plan_editor_create_append_attach_and_depth_cap():
     from rbg.plan import PlanEditor
     ed = PlanEditor.create("r", "t", "T", [{"title": "a"}])
@@ -1869,7 +1869,7 @@ def test_swebench_index_cache_is_keyed_by_commit(tmp_path, monkeypatch):
     assert calls["n"] == 2
 
 
-# -- dynamic PTS ground truth (F2) ------------------------------------------ #
+# - dynamic PTS ground truth (F2) ------------------------------------------ #
 def test_pts_mutation_injects_probe_before_body():
     from eval.pts_dynamic import mutate_source
     src = "def alpha():\n    return 1\n"
@@ -1898,7 +1898,7 @@ def test_pts_score_selection_uses_dynamic_truth():
     assert out["selector"]["recall@k"] >= out["random"]["recall@k"]
 
 
-# -- cross-encoder non-fallback branch (F5) --------------------------------- #
+# - cross-encoder non-fallback branch (F5) --------------------------------- #
 def test_cross_encoder_rerank_uses_model_branch(tmp_path):
     from rbg import retrieval_heavy
     idx = _repo(tmp_path)
@@ -1915,7 +1915,7 @@ def test_cross_encoder_rerank_uses_model_branch(tmp_path):
     assert out[0].path.endswith("b.py")
 
 
-# -- optional real semantic encoder (F6) ------------------------------------ #
+# - optional real semantic encoder (F6) ------------------------------------ #
 class _BagModel:
     """Stand-in sentence-transformers model: counts three marker words."""
 
@@ -1996,7 +1996,7 @@ def test_encoder_from_state_dispatches_semantic_kind(monkeypatch):
                            np.zeros((0, 384)))
 
 
-# -- experience memory is causal (F3) --------------------------------------- #
+# - experience memory is causal (F3) --------------------------------------- #
 def test_experience_memory_causes_resolution(tmp_path):
     import re
 
@@ -2014,7 +2014,7 @@ def test_experience_memory_causes_resolution(tmp_path):
     store.close()
 
     class MemoLLM(ScriptedLLM):
-        """Edits a file only when the recalled experience names it — ignores the
+        """Edits a file only when the recalled experience names it; ignores the
         retrieval hits, so resolution is caused by the experience, not search."""
         def edit(self, task, plan, context, diagnostics=""):
             named = set()
@@ -2058,7 +2058,7 @@ def test_patch_head_trains_from_regression_ledger(tmp_path):
     assert models.metrics["patch"]["positive_rate"] == 0.1  # only the first green->red transition
 
 
-# -- autonomous plan drift ------------------------------------------------ #
+# - autonomous plan drift ------------------------------------------------ #
 def _git_repo(tmp_path):
     import subprocess
     root = tmp_path / "repo"

@@ -14,7 +14,7 @@ vector index, and ``vector_distance_cos`` scores a query against it.  Setting
 ``RBG_DB_SYNC_URL`` for an embedded replica) points the same code at a
 remote Turso server; the default is the local file.
 
-Dependency note: ``libsql`` is a hard dependency — Turso/libSQL is the only
+Dependency note: ``libsql`` is a hard dependency; Turso/libSQL is the only
 store the harness supports.  (The shared/global tier is best-effort: if its
 ``ATTACH`` cannot be created the repo store still works, just without
 cross-repo pooling.)
@@ -48,8 +48,8 @@ def db_path(root: str) -> str:
     """Where a repo's libSQL database lives.
 
     Default is a central, per-repo file under ``~/.local/share/rbg/repos``
-    (keyed by the repo path), so probing an arbitrary snapshot — including a
-    read-only one — never writes into the repo itself.  Set
+    (keyed by the repo path), so probing an arbitrary snapshot, including a
+    read-only one, never writes into the repo itself.  Set
     ``RBG_DB_IN_REPO=1`` for the portable ``<repo>/.rbg/rbg.db``,
     or ``RBG_DB_DIR`` / ``RBG_DB_URL`` to relocate/remote it."""
     default_root = os.environ.get("RBG_DB_ROOT") or os.path.join(
@@ -178,7 +178,7 @@ class Store:
         finally:
             self._txn_depth = 0
 
-    # -- schema ----------------------------------------------------------- #
+    # - schema ----------------------------------------------------------- #
     def _schema(self) -> None:
         rows = self.conn.execute("PRAGMA user_version").fetchall()
         if rows and int(rows[0][0] or 0) >= SCHEMA_VERSION:
@@ -255,7 +255,7 @@ class Store:
         except Exception:  # pragma: no cover - pooling is best effort
             self._attached_global = False
 
-    # -- meta ------------------------------------------------------------- #
+    # - meta ------------------------------------------------------------- #
     def set_meta(self, key: str, value) -> None:
         self.conn.execute(
             "INSERT INTO meta(key, value) VALUES(?, ?) "
@@ -266,7 +266,7 @@ class Store:
         rows = self.conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchall()
         return json.loads(rows[0][0]) if rows else default
 
-    # -- index ------------------------------------------------------------ #
+    # - index ------------------------------------------------------------ #
     def save_index(self, index) -> None:
         with self._write_txn():
             c = self.conn
@@ -325,7 +325,7 @@ class Store:
         idx.references = {k: sorted(set(v)) for k, v in refs.items()}
         return idx
 
-    # -- lexical candidates (FTS5) --------------------------------------- #
+    # - lexical candidates (FTS5) --------------------------------------- #
     def fts_search(self, query: str, limit: int) -> list[tuple[int, float]]:
         """BM25 lexical candidates from the persisted FTS5 index.
 
@@ -351,7 +351,7 @@ class Store:
             return []
         return [(pos[r[0]], -float(r[1])) for r in rows if r[0] in pos]
 
-    # -- vectors ---------------------------------------------------------- #
+    # - vectors ---------------------------------------------------------- #
     def _has_table(self, name: str) -> bool:
         return bool(self.conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchall())
@@ -412,7 +412,7 @@ class Store:
         out.sort(key=lambda kv: kv[1])
         return out
 
-    # -- experience memory (SWE-Exp) -------------------------------------- #
+    # - experience memory (SWE-Exp) -------------------------------------- #
     def save_experience(self, *, task_id: str, repo_id: str, revision: str,
                         query: str, outcome: str, summary: str,
                         vector: np.ndarray) -> None:
@@ -457,7 +457,7 @@ class Store:
         out.sort(key=lambda e: e["distance"])
         return out[:limit]
 
-    # -- encoder ---------------------------------------------------------- #
+    # - encoder ---------------------------------------------------------- #
     def save_encoder(self, revision: str, state: dict, matrix: np.ndarray) -> None:
         dim = int(np.asarray(matrix).shape[1]) if np.asarray(matrix).size else 0
         payload, digest = persist.dump(state)
@@ -514,7 +514,7 @@ class Store:
             return None
         return rows[0][0], decoded[0]
 
-    # -- plan documents --------------------------------------------------- #
+    # - plan documents --------------------------------------------------- #
     def save_plan(self, root: str, task_id: str, doc: dict) -> None:
         with self._write_txn():
             self.conn.execute(
@@ -534,7 +534,7 @@ class Store:
             return None
         return doc
 
-    # -- ledger ----------------------------------------------------------- #
+    # - ledger ----------------------------------------------------------- #
     @staticmethod
     def _ledger_hash(entry: dict, prev_hash: str) -> str:
         canon = json.dumps([
@@ -610,7 +610,7 @@ class Store:
             })
         return out
 
-    # -- model artifacts -------------------------------------------------- #
+    # - model artifacts -------------------------------------------------- #
     def save_model(self, name: str, version: str, obj, metrics: dict | None = None,
                    revision: str = "") -> None:
         payload, digest = persist.dump(obj)
@@ -644,7 +644,7 @@ class Store:
             return None
         return decoded[0], rows[0][1], decoded[1]
 
-    # -- pooled prior (global tier) --------------------------------------- #
+    # - pooled prior (global tier) --------------------------------------- #
     def save_pooled(self, kind: str, weights, n: int, version: str, metrics: dict | None = None) -> None:
         if not self._attached_global:
             return
