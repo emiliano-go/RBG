@@ -72,3 +72,18 @@ def test_paired_ab_reports_task_level_deltas(monkeypatch):
     assert out["paired"]["n"] == 1
     assert out["comparison"]["resolution_rate"]["delta"] == 0.0
     assert out["paired"]["resolution_delta"] == 0.0
+
+
+def test_ab_explicitly_disables_localization_for_baseline(monkeypatch):
+    calls = []
+    monkeypatch.setenv("RBG_FAULT_LOCALIZATION", "1")
+
+    def fake_run_live(suite_dir, *, model, fault_localization, **kwargs):
+        calls.append(os.environ.get("RBG_FAULT_LOCALIZATION"))
+        return {"kind": "live-model", "suite": "x", "model": model.model,
+                "runs": [], "metrics": {}}
+
+    monkeypatch.setattr(live_benchmark, "run_live", fake_run_live)
+    live_benchmark.run_ab("ignored", model=FixLLM())
+    assert calls == ["0", "1"]
+    assert os.environ.get("RBG_FAULT_LOCALIZATION") == "1"

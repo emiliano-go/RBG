@@ -67,8 +67,18 @@ def run_ab(suite_dir: str, *, model: OpenAICompatLLM, repeats: int = 1,
                   use_plan_audit=use_plan_audit,
                   max_iterations=max_iterations, task_ids=task_ids,
                   price_in=price_in, price_out=price_out)
-    baseline = run_live(suite_dir, model=model, fault_localization=False, **common)
-    candidate = run_live(suite_dir, model=model, fault_localization=True, **common)
+    previous = os.environ.get("RBG_FAULT_LOCALIZATION")
+    try:
+        # The baseline must be explicitly off, not merely "not enabled".
+        os.environ["RBG_FAULT_LOCALIZATION"] = "0"
+        baseline = run_live(suite_dir, model=model, fault_localization=False, **common)
+        os.environ["RBG_FAULT_LOCALIZATION"] = "1"
+        candidate = run_live(suite_dir, model=model, fault_localization=True, **common)
+    finally:
+        if previous is None:
+            os.environ.pop("RBG_FAULT_LOCALIZATION", None)
+        else:
+            os.environ["RBG_FAULT_LOCALIZATION"] = previous
     return {
         "kind": "live-ab",
         "suite": baseline["suite"], "model": baseline["model"],

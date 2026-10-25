@@ -4,7 +4,9 @@
     {
       "id": "discount",
       "task": "fix apply_discount so a percentage discount is applied correctly",
-      "expected_files": ["shop.py"],
+      "expected_files": [
+        "shop.py"
+      ],
       "files": {
         "shop.py": "def apply_discount(price, percent):\n    return price - percent\n\n\ndef total(prices):\n    return sum(prices)\n",
         "test_shop.py": "from shop import apply_discount, total\n\n\ndef test_apply_discount():\n    assert apply_discount(100, 10) == 90.0\n\n\ndef test_total():\n    assert total([1, 2, 3]) == 6\n"
@@ -12,13 +14,19 @@
       "fix": {
         "shop.py": "def apply_discount(price, percent):\n    return price * (1 - percent / 100.0)\n\n\ndef total(prices):\n    return sum(prices)\n"
       },
-      "expect_pass": ["test_shop.py::test_apply_discount"],
-      "must_keep_passing": ["test_shop.py::test_total"]
+      "expect_pass": [
+        "test_shop.py::test_apply_discount"
+      ],
+      "must_keep_passing": [
+        "test_shop.py::test_total"
+      ]
     },
     {
       "id": "off_by_one",
       "task": "fix index_of_first so it finds the last element too",
-      "expected_files": ["calc.py"],
+      "expected_files": [
+        "calc.py"
+      ],
       "files": {
         "calc.py": "def clamp(v, lo, hi):\n    return min(hi, max(lo, v))\n\n\ndef index_of_first(items, target):\n    for i in range(len(items) - 1):\n        if items[i] == target:\n            return i\n    return -1\n",
         "test_calc.py": "from calc import clamp, index_of_first\n\n\ndef test_index_of_first():\n    assert index_of_first([1, 2, 3], 3) == 2\n\n\ndef test_clamp():\n    assert clamp(5, 0, 3) == 3\n"
@@ -26,22 +34,32 @@
       "fix": {
         "calc.py": "def clamp(v, lo, hi):\n    return min(hi, max(lo, v))\n\n\ndef index_of_first(items, target):\n    for i in range(len(items)):\n        if items[i] == target:\n            return i\n    return -1\n"
       },
-      "expect_pass": ["test_calc.py::test_index_of_first"],
-      "must_keep_passing": ["test_calc.py::test_clamp"]
+      "expect_pass": [
+        "test_calc.py::test_index_of_first"
+      ],
+      "must_keep_passing": [
+        "test_calc.py::test_clamp"
+      ]
     },
     {
       "id": "empty_input",
       "task": "fix first_or_empty so it does not crash on an empty list",
-      "expected_files": ["text_utils.py"],
+      "expected_files": [
+        "text_utils.py"
+      ],
       "files": {
         "text_utils.py": "def first_or_empty(xs):\n    return xs[0]\n",
-        "test_text.py": "from text_utils import first_or_empty\n\n\ndef test_first_or_empty():\n    assert first_or_empty([]) == \"\"\n    assert first_or_empty([5]) == 5\n"
+        "test_text.py": "from text_utils import first_or_empty\n\n\ndef test_first_or_empty():\n    assert first_or_empty([]) == \"\"\n    assert first_or_empty([5]) == 5\n\n\ndef test_importable():\n    assert callable(first_or_empty)\n"
       },
       "fix": {
         "text_utils.py": "def first_or_empty(xs):\n    return xs[0] if xs else \"\"\n"
       },
-      "expect_pass": ["test_text.py::test_first_or_empty"],
-      "must_keep_passing": []
+      "expect_pass": [
+        "test_text.py::test_first_or_empty"
+      ],
+      "must_keep_passing": [
+        "test_text.py::test_importable"
+      ]
     }
   ]
 }
