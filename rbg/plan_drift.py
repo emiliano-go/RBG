@@ -1,6 +1,6 @@
 """Deterministic plan drift: what the plan declared versus what changed.
 
-This is the hard gate. The semantic model in :mod:`harness.models` is advisory
+This is the hard gate. The semantic model in :mod:`rbg.models` is advisory
 and runs after these checks; it never overrides a proven scope error. Every
 finding carries a code and the section that owns it so the repair loop can
 feed back a concrete instruction rather than a score.
@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from .diffing import ChangedSet, _norm, content_digest
 
 #: Paths the harness writes itself. They are never plan drift.
-_INTERNAL_PREFIXES = (".harness/", "__pycache__/", ".pytest_cache/",
+_INTERNAL_PREFIXES = (".rbg/", "__pycache__/", ".pytest_cache/",
                       ".git/", ".venv/", "node_modules/")
 
 #: Bounds: a plan audit is not a whole-disk scan. Exceeding either cap blocks

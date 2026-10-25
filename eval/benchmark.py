@@ -29,10 +29,10 @@ import tempfile
 import time
 from dataclasses import asdict, dataclass
 
-from harness.orchestrator import EditOp, Orchestrator
-from harness.retrieval import HybridRetriever
-from harness.index import RepoIndex
-from harness.training import wilson_ci
+from rbg.orchestrator import EditOp, Orchestrator
+from rbg.retrieval import HybridRetriever
+from rbg.index import RepoIndex
+from rbg.training import wilson_ci
 
 
 @dataclass(frozen=True)
@@ -202,7 +202,7 @@ def _write_repo(root: str, files: dict[str, str]) -> None:
             fh.write(content)
 
 
-def run_task(task: dict, config: BenchConfig, workdir: str) -> dict:
+def run_task(task: dict, config: BenchConfig, workdir: str, model=None) -> dict:
     root = os.path.join(workdir, task["id"])
     os.makedirs(root, exist_ok=True)
     _write_repo(root, task["files"])
@@ -213,7 +213,9 @@ def run_task(task: dict, config: BenchConfig, workdir: str) -> dict:
             root, task["task"], task.get("expected_files", []), config.context_limit)
 
     fix = task.get("fix", {})
-    if config.partial:
+    if model is not None:
+        pass
+    elif config.partial:
         model = PartialLLM(fix, task.get("expected_files", []))
     elif config.blind:
         model = BlindLLM(fix)

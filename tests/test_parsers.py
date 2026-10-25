@@ -1,4 +1,4 @@
-from harness import parsers
+from rbg import parsers
 
 
 def test_javascript_symbols_and_references():

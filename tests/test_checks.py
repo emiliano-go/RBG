@@ -5,7 +5,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from harness.checks import (  # noqa: E402
+from rbg.checks import (  # noqa: E402
     Toolchain, binary_available, compile_command, detect, runner_argv,
 )
 

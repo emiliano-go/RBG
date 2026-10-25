@@ -1,6 +1,6 @@
 """Tree-sitter chunking and symbol extraction for non-Python languages.
 
-Python keeps the AST path in :mod:`harness.index` (better call edges); every
+Python keeps the AST path in :mod:`rbg.index` (better call edges); every
 other supported language gets real function/class chunks instead of a blind
 40-line window.  If a grammar is unavailable the caller falls back to text.
 """

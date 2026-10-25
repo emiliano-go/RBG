@@ -1,4 +1,4 @@
-"""Register the RBG Harness MCP server with agent harnesses.
+"""Register the RBG MCP server with agent harnesses.
 
 ``rbg install`` writes the smallest config entry each client needs, merging
 into existing JSON/TOML instead of overwriting it.  Supported targets:
@@ -7,7 +7,7 @@ into existing JSON/TOML instead of overwriting it.  Supported targets:
 
 User scope writes the client's global config; project scope writes a config
 inside the working tree.  The MCP server denies every repository by default,
-so the entry always carries ``HARNESS_ALLOWED_ROOTS`` naming the roots the
+so the entry always carries ``RBG_ALLOWED_ROOTS`` naming the roots the
 operator chose.
 """
 
@@ -34,8 +34,8 @@ _BINARIES = {
     "vscode": ("code",),
 }
 
-_TOML_BEGIN = "# >>> rbg-harness >>>"
-_TOML_END = "# <<< rbg-harness <<<"
+_TOML_BEGIN = "# >>> rbg >>>"
+_TOML_END = "# <<< rbg <<<"
 
 
 class InstallError(RuntimeError):
@@ -109,12 +109,12 @@ def server_command() -> list[str]:
         sibling = Path(sys.executable).with_name(name)
         if sibling.is_file() and os.access(sibling, os.X_OK):
             return [str(sibling)]
-    return [sys.executable, "-m", "harness.mcp_server"]
+    return [sys.executable, "-m", "rbg.mcp_server"]
 
 
 def _entry(target: str, roots: list[str]) -> dict:
     cmd = server_command()
-    env = {"HARNESS_ALLOWED_ROOTS": os.pathsep.join(roots)} if roots else {}
+    env = {"RBG_ALLOWED_ROOTS": os.pathsep.join(roots)} if roots else {}
     if target == "opencode":
         return {"type": "local", "command": cmd, "enabled": True, "environment": env}
     if target == "vscode":

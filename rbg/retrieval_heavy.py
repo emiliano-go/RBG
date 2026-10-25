@@ -4,14 +4,14 @@ The default harness is numpy-only.  A learned sparse retriever (SPLADE-Code)
 or a code cross-encoder lifts recall but needs a transformer runtime, so it
 lives behind the ``semantic`` extra::
 
-    pip install 'rbg-harness[semantic]'
+    pip install 'rbg[semantic]'
 
 Only the *reranker* slot is filled here, because it duck-types the one method
 ``HybridRetriever`` calls (``Reranker.rerank``) and therefore needs no core
 change.  The encoder slot has a larger surface (``encode`` / ``document_vectors``
 / ``rank``) and is left for when the reranker's gain is measured to be
 insufficient.  Everything degrades gracefully: with no runtime or no configured
-model, the linear :class:`~harness.retrieval.Reranker` is used unchanged.
+model, the linear :class:`~rbg.retrieval.Reranker` is used unchanged.
 """
 
 from __future__ import annotations
@@ -88,7 +88,7 @@ def encoder(model_path: str | None = None, device: str | None = None):
 class SentenceTransformerEncoder:
     """Dense semantic encoder backed by a sentence-transformers checkpoint.
 
-    Duck-types the encoder slot of :class:`~harness.retrieval.HybridRetriever`
+    Duck-types the encoder slot of :class:`~rbg.retrieval.HybridRetriever`
     (``encode`` / ``document_vectors`` / ``rank`` / ``to_state``).  This is the
     real embedding the dependency-free hash/LSA encoders stood in for; it is the
     slot that matters when lexical recall plateaus on vocabulary mismatch.
@@ -170,7 +170,7 @@ class SentenceTransformerEncoder:
 class CrossEncoderReranker:
     """Code cross-encoder reranker over the fused candidates.
 
-    Duck-types :meth:`harness.retrieval.Reranker.rerank`, so it plugs into
+    Duck-types :meth:`rbg.retrieval.Reranker.rerank`, so it plugs into
     ``HybridRetriever(index, reranker=CrossEncoderReranker())``.  Point
     ``RBG_CROSS_ENCODER`` at a sentence-transformers / sequence-classification
     checkpoint; with no runtime or no model it delegates to the trained linear

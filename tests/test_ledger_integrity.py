@@ -1,4 +1,4 @@
-from harness.db import Store
+from rbg.db import Store
 
 
 def test_ledger_chain_verifies_and_detects_tampering(tmp_path):

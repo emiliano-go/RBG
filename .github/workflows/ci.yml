@@ -8,31 +8,41 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ["3.12", "3.13"]
       # bubblewrap lets the isolation tests exercise the real sandbox boundary
       # instead of the unisolated escape hatch.
       - run: sudo apt-get update && sudo apt-get install -y bubblewrap
       # Ubuntu 24.04 blocks unprivileged user namespaces via AppArmor, which
-      # makes bwrap fail its probe.  Re-enable them for the sandbox tests.
+      # makes bwrap fail its probe. Re-enable them for the sandbox tests.
       - run: |
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           sudo sysctl -w kernel.unprivileged_userns_clone=1 || true
       - run: pip install -e '.[dev]'
-      - run: ruff check --select F,E9 harness eval tests
+      - run: ruff check rbg eval tests
       - run: python -m pytest -q
       # Exercise the console CLI path (not just eval.benchmark directly): its
       # argument forwarding is its own failure surface.
-      - run: python -m harness eval --suite eval/suites/smoke --config baseline --out /tmp/baseline.json
-      - run: python -m harness eval --suite eval/suites/smoke --config blind-full --out /tmp/blind-full.json
-      - run: python -m harness compare /tmp/baseline.json /tmp/blind-full.json
+      - run: python -m rbg eval --suite eval/suites/smoke --config baseline --out /tmp/baseline.json
+      - run: python -m rbg eval --suite eval/suites/smoke --config blind-full --out /tmp/blind-full.json
+      - run: python -m rbg compare /tmp/baseline.json /tmp/blind-full.json
       # Retrieval recall ablation on the distractor-injected hard suite: prints
       # the lexical/dense/hybrid comparison the recall_at_1 CI floor guards.
       - run: python -m eval.retrieval_ablation eval/suites/hard --k 5
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pip-audit
+      - run: pip-audit

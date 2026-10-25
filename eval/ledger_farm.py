@@ -8,7 +8,7 @@ each task under two configs, interleaved, so the ledger gets both outcomes:
 * ``full``          - retrieval on and the oracle fix, so it resolves
 
 The resulting temporal test slice has both classes, which is what
-:func:`harness.training.validate_and_promote` needs.
+:func:`rbg.training.validate_and_promote` needs.
 
     python3 -m eval.ledger_farm --suite eval/suites/curated --tasks 50
 """
@@ -26,8 +26,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from eval.benchmark import (CONFIGS, BlindLLM, ChaosLLM, OracleLLM,  # noqa: E402
                             _write_repo, load_suite)
-from harness.orchestrator import Orchestrator  # noqa: E402
-from harness.training import train_from_ledger, validate_and_promote  # noqa: E402
+from rbg.orchestrator import Orchestrator  # noqa: E402
+from rbg.training import train_from_ledger, validate_and_promote  # noqa: E402
 
 
 def _reset(root: str) -> None:
@@ -56,7 +56,7 @@ def farm(suite_dir: str, root: str, configs: tuple[str, ...],
             cfg = CONFIGS[name]
             if live:
                 # A real generative model: resolution is genuine, not oracle-known.
-                from harness.providers import OpenAICompatLLM
+                from rbg.providers import OpenAICompatLLM
                 model = OpenAICompatLLM()
             elif cfg.regress:
                 model = ChaosLLM(task.get("fix", {}), task.get("files", {}),

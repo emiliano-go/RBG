@@ -29,8 +29,8 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from harness.index import RepoIndex  # noqa: E402
-from harness.retrieval import HybridRetriever  # noqa: E402
+from rbg.index import RepoIndex  # noqa: E402
+from rbg.retrieval import HybridRetriever  # noqa: E402
 
 ROWS_API = ("https://datasets-server.huggingface.co/rows"
             "?dataset=princeton-nlp/SWE-bench_Lite&config=default&split=test")
@@ -52,7 +52,7 @@ def _fetch(limit: int, page: int = 100) -> list[dict]:
     while len(out) < limit:
         length = min(page, limit - len(out))
         url = f"{ROWS_API}&offset={offset}&length={length}"
-        req = urllib.request.Request(url, headers={"User-Agent": "rbg-harness"})
+        req = urllib.request.Request(url, headers={"User-Agent": "rbg"})
         with urllib.request.urlopen(req, timeout=60) as fh:
             data = json.load(fh)
         rows = data.get("rows", [])

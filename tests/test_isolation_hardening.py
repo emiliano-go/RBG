@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from harness import isolation
-from harness.verify import Sandbox
+from rbg import isolation
+from rbg.verify import Sandbox
 
 
 def test_prefix_unshares_and_drops_caps(tmp_path):

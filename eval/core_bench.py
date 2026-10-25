@@ -13,8 +13,8 @@ from __future__ import annotations
 import argparse
 import json
 
-from harness.index import RepoIndex
-from harness.retrieval import HybridRetriever
+from rbg.index import RepoIndex
+from rbg.retrieval import HybridRetriever
 
 
 def load_cases(path: str) -> list[dict]:

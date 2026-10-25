@@ -6,5 +6,6 @@ __pycache__/
 venv/
 *.db
 *.db-journal
+.rbg/
 .totem/
 .DS_Store

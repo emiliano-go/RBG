@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install RBG Harness and register its MCP server with every detected client.
+# Install RBG and register its MCP server with every detected client.
 #
 #   ./install.sh                       # auto-detect opencode, claude, cursor, ...
 #   ./install.sh --target claude       # one client
@@ -13,7 +13,7 @@ if [ -z "$src" ]; then
   if [ -f "$here/pyproject.toml" ]; then
     src="$here"
   else
-    src="git+https://github.com/emiliano-go/RBG-harness.git"
+    src="git+https://github.com/emiliano-go/RBG.git"
   fi
 fi
 

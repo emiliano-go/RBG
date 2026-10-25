@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from harness.install import InstallError, config_path, install, server_command
+from rbg.install import InstallError, config_path, install, server_command
 
 
 def _json(path):
@@ -23,8 +23,8 @@ def test_project_json_targets_merge_with_existing_config(tmp_path):
     entry = data["mcp"]["rbg"]
     assert entry["type"] == "local"
     assert (entry["command"][0].endswith("rbg-mcp")
-            or entry["command"][-2:] == ["-m", "harness.mcp_server"])
-    assert entry["environment"]["HARNESS_ALLOWED_ROOTS"] == str(tmp_path.resolve())
+            or entry["command"][-2:] == ["-m", "rbg.mcp_server"])
+    assert entry["environment"]["RBG_ALLOWED_ROOTS"] == str(tmp_path.resolve())
 
 
 def test_claude_project_config(tmp_path):
@@ -34,8 +34,8 @@ def test_claude_project_config(tmp_path):
     install(["claude"], scope="project", directory=tmp_path, roots=[a, b])
     entry = _json(tmp_path / ".mcp.json")["mcpServers"]["rbg"]
     argv = [entry["command"], *entry["args"]]
-    assert argv[0].endswith("rbg-mcp") or argv[-2:] == ["-m", "harness.mcp_server"]
-    assert entry["env"]["HARNESS_ALLOWED_ROOTS"].split(os.pathsep) == [str(a), str(b)]
+    assert argv[0].endswith("rbg-mcp") or argv[-2:] == ["-m", "rbg.mcp_server"]
+    assert entry["env"]["RBG_ALLOWED_ROOTS"].split(os.pathsep) == [str(a), str(b)]
 
 
 def test_codex_toml_is_idempotent_and_replaces_managed_block(tmp_path):
@@ -86,7 +86,7 @@ def test_user_scope_requires_an_explicit_root(tmp_path, monkeypatch):
 def test_project_scope_defaults_to_the_project_dir(tmp_path):
     records = install(["opencode"], scope="project", directory=tmp_path)
     entry = _json(tmp_path / "opencode.json")["mcp"]["rbg"]
-    assert entry["environment"]["HARNESS_ALLOWED_ROOTS"] == str(tmp_path.resolve())
+    assert entry["environment"]["RBG_ALLOWED_ROOTS"] == str(tmp_path.resolve())
     assert records[0]["roots"] == [str(tmp_path.resolve())]
 
 
@@ -142,4 +142,4 @@ def test_codex_dotted_key_conflict_is_not_written(tmp_path):
 def test_server_command_comes_from_the_running_environment():
     cmd = server_command()
     assert Path(cmd[0]).parent == Path(sys.executable).parent
-    assert cmd[-2:] == ["-m", "harness.mcp_server"] or cmd[0].endswith("rbg-mcp")
+    assert cmd[-2:] == ["-m", "rbg.mcp_server"] or cmd[0].endswith("rbg-mcp")

@@ -18,8 +18,8 @@ import tempfile
 
 import numpy as np
 
-from harness.index import RepoIndex
-from harness.retrieval import HybridRetriever
+from rbg.index import RepoIndex
+from rbg.retrieval import HybridRetriever
 
 from eval.benchmark import _mean, load_suite
 
@@ -79,7 +79,7 @@ def run(suite_dir: str, k: int = 5, reranker: str = "") -> dict:
     modes = list(MODES)
     ce = None
     if reranker == "heavy":
-        from harness.retrieval_heavy import CrossEncoderReranker
+        from rbg.retrieval_heavy import CrossEncoderReranker
         ce = CrossEncoderReranker()
         modes.append("hybrid+ce")
     workdir = tempfile.mkdtemp(prefix="rbg-retr-")

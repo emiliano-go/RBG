@@ -10,10 +10,10 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from harness import isolation  # noqa: E402
-from harness.isolation import IsolationUnavailable  # noqa: E402
-from harness.paths import resolve_within  # noqa: E402
-from harness.verify import Sandbox  # noqa: E402
+from rbg import isolation  # noqa: E402
+from rbg.isolation import IsolationUnavailable  # noqa: E402
+from rbg.paths import resolve_within  # noqa: E402
+from rbg.verify import Sandbox  # noqa: E402
 
 
 def test_relative_path_resolves_under_root(tmp_path):
@@ -87,7 +87,7 @@ def test_safe_vars_are_kept(tmp_path, monkeypatch):
 
 def test_allowlist_extension_is_honoured(tmp_path, monkeypatch):
     sb = Sandbox(str(tmp_path))
-    monkeypatch.setenv("HARNESS_ENV_ALLOW", "MY_VAR")
+    monkeypatch.setenv("RBG_ENV_ALLOW", "MY_VAR")
     monkeypatch.setenv("MY_VAR", "ok")
     assert sb._env().get("MY_VAR") == "ok"
 
@@ -111,13 +111,54 @@ def test_isolation_is_applied_when_backend_exists(tmp_path):
 
 def test_run_refuses_without_backend_or_hatch(tmp_path, monkeypatch):
     monkeypatch.setattr(isolation, "available_backend", lambda: None)
-    monkeypatch.delenv("HARNESS_ALLOW_UNISOLATED", raising=False)
+    monkeypatch.delenv("RBG_ALLOW_UNISOLATED", raising=False)
     with pytest.raises(IsolationUnavailable):
         Sandbox(str(tmp_path)).run(["python3", "-c", "print('hi')"])
 
 
 def test_unisolated_hatch_marks_result(tmp_path, monkeypatch):
     monkeypatch.setattr(isolation, "available_backend", lambda: None)
-    monkeypatch.setenv("HARNESS_ALLOW_UNISOLATED", "1")
+    monkeypatch.setenv("RBG_ALLOW_UNISOLATED", "1")
     res = Sandbox(str(tmp_path)).run(["python3", "-c", "print('hi')"])
     assert res.ok and res.isolated is False and res.isolation == "none"
+
+
+# -- fixed workspace mount -------------------------------------------------- #
+def _bwrap_only():
+    if isolation.available_backend() is None:
+        pytest.skip("no isolation backend on this host")
+
+
+def test_repo_is_mounted_at_the_fixed_workspace_path(tmp_path):
+    _bwrap_only()
+    res = Sandbox(str(tmp_path)).run(["sh", "-c", "pwd"])
+    assert res.ok and res.stdout.strip() == isolation.WORKSPACE
+
+
+def test_host_home_is_always_hidden(tmp_path):
+    _bwrap_only()
+    res = Sandbox(str(tmp_path)).run(
+        ["sh", "-c", 'test -z "$(ls -A /home)" && test ! -e "$HOME/.ssh"'])
+    assert res.ok, res.stderr
+
+
+def test_symlink_to_outside_repo_is_not_readable(tmp_path):
+    _bwrap_only()
+    root = tmp_path / "repo"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    (outside / "secret.txt").write_text("leak")
+    try:
+        os.symlink(outside / "secret.txt", root / "link.txt")
+    except OSError:
+        pytest.skip("symlinks unavailable")
+    res = Sandbox(str(root)).run(["cat", "link.txt"])
+    assert not res.ok and "leak" not in res.stdout
+
+
+def test_subdirectory_cwd_is_translated(tmp_path):
+    _bwrap_only()
+    (tmp_path / "sub").mkdir()
+    res = Sandbox(str(tmp_path)).run(["pwd"], cwd="sub")
+    assert res.ok and res.stdout.strip() == f"{isolation.WORKSPACE}/sub"

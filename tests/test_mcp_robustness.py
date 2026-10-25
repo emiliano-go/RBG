@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 
-from harness import mcp_server
+from rbg import mcp_server
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -13,7 +13,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 def _run(lines: bytes, **env):
     boost = {**os.environ, "PYTHONPATH": REPO, **env}
     proc = subprocess.run(
-        [sys.executable, "-m", "harness.mcp_server"],
+        [sys.executable, "-m", "rbg.mcp_server"],
         input=lines, capture_output=True, cwd=REPO, env=boost, timeout=60,
         check=False)
     assert proc.returncode == 0, proc.stderr.decode()
@@ -38,7 +38,7 @@ def test_invalid_json_gets_a_parse_error():
 def test_oversized_line_is_rejected_without_losing_the_next_request():
     out = _run(b'{"x":"' + b"a" * 500 + b'"}\n'
                b'{"jsonrpc":"2.0","id":3,"method":"ping"}\n',
-               HARNESS_MCP_MAX_LINE_BYTES="64")
+               RBG_MCP_MAX_LINE_BYTES="64")
     assert out[0]["error"]["code"] == -32600
     assert "exceeds" in out[0]["error"]["message"]
     assert out[1]["result"] == {}

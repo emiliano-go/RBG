@@ -371,16 +371,16 @@ class LSIEncoder:
             self.proj = np.zeros((V, self.k))
             self.doc_vecs = np.zeros((n, self.k))
             return self
-        l = max(1, min(self.k + self.oversample, V, n))
+        width = max(1, min(self.k + self.oversample, V, n))
         packed = self._encode_docs(docs)
         rng = np.random.default_rng(self.seed)
-        omega = rng.standard_normal((n, l))
-        Y = np.zeros((V, l))
+        omega = rng.standard_normal((n, width))
+        Y = np.zeros((V, width))
         for d, (terms, vals) in enumerate(packed):
             if terms:
                 Y[terms] += np.outer(vals, omega[d])
         Q, _ = np.linalg.qr(Y)
-        Z = np.zeros((l, n))
+        Z = np.zeros((width, n))
         for d, (terms, vals) in enumerate(packed):
             if terms:
                 Z[:, d] = Q[terms].T @ np.asarray(vals, dtype=float)
@@ -499,7 +499,7 @@ def heavy_encoder():
         return None
 
 
-# Fixed width for the experience-memory vector index (harness/db.py).
+# Fixed width for the experience-memory vector index (rbg/db.py).
 EXPERIENCE_DIM = 512
 
 

@@ -11,20 +11,22 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from harness.index import RepoIndex  # noqa: E402
-from harness.models import (  # noqa: E402
+from rbg.index import RepoIndex  # noqa: E402
+from rbg.models import (  # noqa: E402
     ACTIONS, FEATURE_NAMES, ChangeImpactModel, ConformalCalibrator, FlakyModel, GBDT,
     PlattScaler, Policy, TestSelector, extract_features, select_action,
 )
-from harness.retrieval import BM25, DenseEncoder, HybridRetriever  # noqa: E402
-from harness.verify import Sandbox, parse_pytest  # noqa: E402
-from harness.__main__ import (  # noqa: E402
+from rbg.retrieval import BM25, DenseEncoder, HybridRetriever  # noqa: E402
+from rbg.verify import Sandbox, parse_pytest  # noqa: E402
+from rbg.__main__ import (  # noqa: E402
     BUGGY_SHOP, FIXED_SHOP, TEST_SHOP, ScriptedLLM, _make_demo_repo,
 )
-from harness.orchestrator import EditOp, Orchestrator  # noqa: E402
-from harness.training import LearnedModels, train_from_ledger  # noqa: E402
-from harness.drift import drift_report, psi  # noqa: E402
-from harness import mcp_server  # noqa: E402
+from rbg.orchestrator import EditOp, Orchestrator  # noqa: E402
+from rbg.training import LearnedModels, train_from_ledger  # noqa: E402
+from rbg.drift import drift_report, psi  # noqa: E402
+from rbg import mcp_server  # noqa: E402
+import rbg.mcp_service as mcp_service  # noqa: E402
+import rbg.retrieval as retrieval  # noqa: E402
 
 
 def _repo(tmp_path):
@@ -47,7 +49,7 @@ def test_bm25_ranks_relevant_first():
 
 def test_large_corpus_stays_lexical_only(monkeypatch):
     """Above the dense cap the read path must not fit/encode the whole corpus."""
-    import harness.retrieval as retrieval
+    import rbg.retrieval as retrieval
     import tempfile
     from pathlib import Path
     d = Path(tempfile.mkdtemp())
@@ -62,7 +64,7 @@ def test_large_corpus_stays_lexical_only(monkeypatch):
 
 def test_tool_deadline_interrupts_slow_call(monkeypatch):
     import time
-    monkeypatch.setenv("HARNESS_TOOL_TIMEOUT_MS", "100")
+    monkeypatch.setenv("RBG_TOOL_TIMEOUT_MS", "100")
     with pytest.raises(mcp_server.ToolTimeout):
         mcp_server._call_with_deadline(lambda **_: time.sleep(2), {})
 
@@ -72,7 +74,7 @@ def test_async_index_build_returns_building_then_ready(tmp_path, monkeypatch):
     repo = tmp_path / "async_repo"
     repo.mkdir()
     (repo / "core.py").write_text("def beta_helper():\n    return 42\n")
-    monkeypatch.setenv("HARNESS_INDEX_ASYNC", "1")
+    monkeypatch.setenv("RBG_INDEX_ASYNC", "1")
     mcp_server._INDEX_CACHE.clear()
     mcp_server._INDEX_SIGNATURE.clear()
     mcp_server._BUILD_STATE.clear()
@@ -104,7 +106,7 @@ def test_hybrid_fuses_and_reranker_reorders():
     idx = _repo(d)
     hits = HybridRetriever(idx).retrieve("beta_helper", limit=5)
     assert hits and hits[0].path == "b.py"
-    from harness.retrieval import Reranker
+    from rbg.retrieval import Reranker
     rr = Reranker().rerank("beta_helper", hits, idx.chunks)
     assert rr[0].path == "b.py"
 
@@ -115,7 +117,7 @@ def test_dense_encoder_is_deterministic_across_processes():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     code = (
         "import sys; sys.path.insert(0, __ROOT__);"
-        "from harness.retrieval import DenseEncoder;"
+        "from rbg.retrieval import DenseEncoder;"
         "e=DenseEncoder(256).fit(['def alpha_beta gamma', 'class DeltaEpsilon']);"
         "print(' '.join('%.9f' % x for x in e.encode('alpha beta gamma delta')))"
     ).replace("__ROOT__", repr(root))
@@ -130,7 +132,7 @@ def test_dense_encoder_is_deterministic_across_processes():
 def test_query_expansion_adds_related_terms():
     import tempfile
     from pathlib import Path
-    from harness.retrieval import BM25, expand_query
+    from rbg.retrieval import BM25, expand_query
     d = Path(tempfile.mkdtemp())
     (d / "m.py").write_text(
         "def beta_helper():\n    return 42\n\n"
@@ -144,7 +146,7 @@ def test_query_expansion_adds_related_terms():
 
 
 def test_lsi_encoder_ranks_and_is_normalised():
-    from harness.retrieval import LSIEncoder
+    from rbg.retrieval import LSIEncoder
     corpus = [
         "def compute_invoice_total(items):  # sum line item prices and tax",
         "def billing_report(account):  # uses compute_invoice_total to bill",
@@ -159,7 +161,7 @@ def test_lsi_encoder_ranks_and_is_normalised():
 
 
 def test_mmr_prefers_a_distinct_document():
-    from harness.retrieval import mmr
+    from rbg.retrieval import mmr
     q = np.array([1.0, 0.0])
     docs = np.array([[0.99, 0.0], [0.98, 0.0], [0.5, 0.86]])  # 0,1 near-duplicate
     chosen = mmr(q, docs, [0, 1, 2], k=2, lam=0.4)
@@ -252,11 +254,12 @@ def test_end_to_end_demo_verifies(tmp_path):
     comps = {e["component"] for e in orch.ledger.entries}
     assert {"policy", "retriever", "verifier", "orchestrator"} <= comps
     assert os.path.exists(os.path.join(root, "test_shop.py"))
+    assert "shop.py" in report.patch and "--- a/shop.py" in report.patch
 
 
 # -- experience memory (SWE-Exp) -------------------------------------------- #
 def test_experience_encoder_is_unfit_and_deterministic():
-    from harness.retrieval import EXPERIENCE_DIM, experience_encoder
+    from rbg.retrieval import EXPERIENCE_DIM, experience_encoder
     enc = experience_encoder()
     assert enc.dim == EXPERIENCE_DIM and enc.idf == {}  # unfit: no corpus stats
     v = enc.encode("fix the discount calculation")
@@ -265,8 +268,8 @@ def test_experience_encoder_is_unfit_and_deterministic():
 
 
 def test_experience_search_returns_nearest_and_caps_at_one(tmp_path):
-    from harness import db
-    from harness.retrieval import experience_encoder
+    from rbg import db
+    from rbg.retrieval import experience_encoder
     store = db.Store(str(tmp_path / "exp"))
     enc = experience_encoder()
     for i, task in enumerate(["fix the discount calculation",
@@ -297,7 +300,7 @@ def test_orchestrator_injects_prior_experience(tmp_path):
 
 # -- patch correctness ------------------------------------------------------ #
 def test_patch_features_flag_test_edits_and_heuristic():
-    from harness.models import PATCH_FEATURE_NAMES, PatchCorrectnessModel, patch_features
+    from rbg.models import PATCH_FEATURE_NAMES, PatchCorrectnessModel, patch_features
     clean = {"shop.py": ("def f():\n    return 1\n", "def f():\n    return 2\n")}
     testy = {"tests/test_shop.py": ("def t():\n    assert f() == 1\n",
                                     "def t():\n    assert f() == 2\n")}
@@ -308,7 +311,7 @@ def test_patch_features_flag_test_edits_and_heuristic():
 
 
 def test_patch_examples_label_from_regression_evidence():
-    from harness.training import patch_examples
+    from rbg.training import patch_examples
     entries = [
         {"task_id": "A", "component": "patch_features",
          "result": {"feature_vector": [0.0] * 11}},
@@ -345,7 +348,7 @@ def test_test_selection_beats_alphabetical_at_third_budget(tmp_path):
 
 
 def test_retrieval_heavy_falls_back_without_a_model(tmp_path, monkeypatch):
-    from harness import retrieval_heavy
+    from rbg import retrieval_heavy
     monkeypatch.setenv("RBG_CROSS_ENCODER", "")
     assert isinstance(retrieval_heavy.available(), bool)
     idx = _repo(tmp_path)
@@ -357,7 +360,7 @@ def test_retrieval_heavy_falls_back_without_a_model(tmp_path, monkeypatch):
 
 
 def test_repair_loop_uses_diagnostics(tmp_path):
-    from harness.orchestrator import EditOp
+    from rbg.orchestrator import EditOp
 
     class TwoStepLLM:
         def __init__(self):
@@ -389,7 +392,7 @@ def test_runs_get_unique_task_ids(tmp_path):
 
 
 def test_loop_unions_edits_across_iterations(tmp_path):
-    from harness.orchestrator import EditOp
+    from rbg.orchestrator import EditOp
 
     class TwoFileLLM:
         def __init__(self):
@@ -496,7 +499,7 @@ def test_mcp_notifications_and_propose_patch_never_write(tmp_path):
 def test_mcp_root_denied_without_allowlist(tmp_path, monkeypatch):
     root = str(tmp_path / "repo")
     _make_demo_repo(root)
-    monkeypatch.delenv("HARNESS_ALLOWED_ROOTS", raising=False)
+    monkeypatch.delenv("RBG_ALLOWED_ROOTS", raising=False)
     out = _call("retrieve_context", {"root": root, "query": "discount", "limit": 1})
     assert out["result"]["isError"] is True
     assert "authoriz" in out["result"]["content"][0]["text"].lower()
@@ -505,7 +508,7 @@ def test_mcp_root_denied_without_allowlist(tmp_path, monkeypatch):
 def test_mcp_root_outside_allowlist_is_denied(tmp_path, monkeypatch):
     root = str(tmp_path / "repo")
     _make_demo_repo(root)
-    monkeypatch.setenv("HARNESS_ALLOWED_ROOTS", str(tmp_path / "elsewhere"))
+    monkeypatch.setenv("RBG_ALLOWED_ROOTS", str(tmp_path / "elsewhere"))
     out = _call("retrieve_context", {"root": root, "query": "discount", "limit": 1})
     assert out["result"]["isError"] is True
     assert "not allowed" in out["result"]["content"][0]["text"].lower()
@@ -514,7 +517,7 @@ def test_mcp_root_outside_allowlist_is_denied(tmp_path, monkeypatch):
 def test_mcp_root_within_allowlist_is_allowed(tmp_path, monkeypatch):
     root = str(tmp_path / "repo")
     _make_demo_repo(root)
-    monkeypatch.setenv("HARNESS_ALLOWED_ROOTS", str(tmp_path))
+    monkeypatch.setenv("RBG_ALLOWED_ROOTS", str(tmp_path))
     out = _call("retrieve_context", {"root": root, "query": "discount", "limit": 1})
     assert out["result"]["isError"] is False
 
@@ -522,14 +525,14 @@ def test_mcp_root_within_allowlist_is_allowed(tmp_path, monkeypatch):
 def test_mcp_root_allowlist_of_filesystem_root_allows_any(tmp_path, monkeypatch):
     root = str(tmp_path / "repo")
     _make_demo_repo(root)
-    monkeypatch.setenv("HARNESS_ALLOWED_ROOTS", os.sep)
+    monkeypatch.setenv("RBG_ALLOWED_ROOTS", os.sep)
     assert mcp_server._authorize_root(root) == os.path.realpath(root)
 
 
 def test_authorize_root_rejects_sibling_prefix(tmp_path, monkeypatch):
     (tmp_path / "a").mkdir()
     (tmp_path / "ab").mkdir()
-    monkeypatch.setenv("HARNESS_ALLOWED_ROOTS", str(tmp_path / "a"))
+    monkeypatch.setenv("RBG_ALLOWED_ROOTS", str(tmp_path / "a"))
     with pytest.raises(PermissionError):
         mcp_server._authorize_root(str(tmp_path / "ab"))
 
@@ -573,7 +576,7 @@ def test_retrieve_returns_content(tmp_path):
     idx = _repo(tmp_path) if False else RepoIndex.build(str(tmp_path))
     (tmp_path / "mod.py").write_text("def helper():\n    return 'needle value'\n")
     idx = RepoIndex.build(str(tmp_path))
-    from harness.retrieval import HybridRetriever
+    from rbg.retrieval import HybridRetriever
     hits = HybridRetriever(idx).retrieve("helper needle", limit=3)
     assert hits and all(h.content for h in hits)
 
@@ -676,7 +679,7 @@ def test_learned_risk_stays_in_shadow_until_validated(tmp_path):
 
 
 def test_validate_models_promotes_only_with_enough_held_out_evidence(tmp_path):
-    from harness.training import validate_and_promote
+    from rbg.training import validate_and_promote
     thin, _ = _synthetic_ledger(tmp_path / "thin", n=24)
     refused = validate_and_promote(thin, min_test=20)
     assert refused["promoted"] is False
@@ -704,7 +707,7 @@ def test_validate_models_promotes_only_with_enough_held_out_evidence(tmp_path):
 
 
 def test_train_models_cli_and_tool_can_validate(tmp_path):
-    from harness.__main__ import main
+    from rbg.__main__ import main
     root, _ = _synthetic_ledger(tmp_path / "cli", n=200)
     assert main(["validate-models", root, "--min-test", "20"]) == 0
     mcp_server._LEARNED_CACHE.clear()
@@ -808,7 +811,7 @@ def test_nl_queries_are_non_leaky(tmp_path):
 
 
 # -- libSQL persistence layer (mandatory: Turso is the only store) ---------- #
-from harness import db as hdb  # noqa: E402
+from rbg import db as hdb  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -816,8 +819,8 @@ def _isolated_global_db(tmp_path_factory, monkeypatch):
     """Keep the shared/cross-repo tier and per-repo stores out of the operator's
     real data directory."""
     base = tmp_path_factory.mktemp("hdb")
-    monkeypatch.setenv("HARNESS_GLOBAL_DB", str(base / "global.db"))
-    monkeypatch.setenv("HARNESS_DB_ROOT", str(base / "repos"))
+    monkeypatch.setenv("RBG_GLOBAL_DB", str(base / "global.db"))
+    monkeypatch.setenv("RBG_DB_ROOT", str(base / "repos"))
 
 
 def _db_repo(tmp_path):
@@ -853,8 +856,8 @@ def test_db_index_roundtrip(tmp_path):
 
 
 def test_local_db_opens_in_wal_and_skips_schema_rewrite(tmp_path, monkeypatch):
-    monkeypatch.setenv("HARNESS_DB_ROOT", str(tmp_path / "repos"))
-    monkeypatch.setenv("HARNESS_GLOBAL_DB", str(tmp_path / "global.db"))
+    monkeypatch.setenv("RBG_DB_ROOT", str(tmp_path / "repos"))
+    monkeypatch.setenv("RBG_GLOBAL_DB", str(tmp_path / "global.db"))
     repo = _db_repo(tmp_path)
     store = hdb.Store(str(repo))
     assert store.conn.execute("PRAGMA journal_mode").fetchall()[0][0] == "wal"
@@ -871,15 +874,15 @@ def test_local_db_opens_in_wal_and_skips_schema_rewrite(tmp_path, monkeypatch):
 def test_concurrent_agent_writes_do_not_lock(tmp_path, monkeypatch):
     import subprocess
 
-    monkeypatch.setenv("HARNESS_DB_ROOT", str(tmp_path / "repos"))
-    monkeypatch.setenv("HARNESS_GLOBAL_DB", str(tmp_path / "global.db"))
+    monkeypatch.setenv("RBG_DB_ROOT", str(tmp_path / "repos"))
+    monkeypatch.setenv("RBG_GLOBAL_DB", str(tmp_path / "global.db"))
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "a.py").write_text("def a():\n    return 1\n")
     worker = tmp_path / "worker.py"
     worker.write_text(
         "import os\n"
-        "from harness import db\n"
+        "from rbg import db\n"
         "store = db.Store(os.environ['TEST_ROOT'])\n"
         "for i in range(20):\n"
         "    store.append_ledger({'task_id': f\"{os.environ['TAG']}-{i}\", 'component': 'c'})\n"
@@ -900,8 +903,8 @@ def test_concurrent_agent_writes_do_not_lock(tmp_path, monkeypatch):
 def test_index_is_built_once_across_processes(tmp_path, monkeypatch):
     import subprocess
 
-    monkeypatch.setenv("HARNESS_DB_ROOT", str(tmp_path / "repos"))
-    monkeypatch.setenv("HARNESS_GLOBAL_DB", str(tmp_path / "global.db"))
+    monkeypatch.setenv("RBG_DB_ROOT", str(tmp_path / "repos"))
+    monkeypatch.setenv("RBG_GLOBAL_DB", str(tmp_path / "global.db"))
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "a.py").write_text("def alpha():\n    return 1\n")
@@ -910,8 +913,8 @@ def test_index_is_built_once_across_processes(tmp_path, monkeypatch):
     worker = tmp_path / "indexer.py"
     worker.write_text(
         "import os\n"
-        "from harness import mcp_server\n"
-        "from harness.index import RepoIndex\n"
+        "from rbg import mcp_server\n"
+        "from rbg.index import RepoIndex\n"
         "orig = RepoIndex.build\n"
         "def counted(*args, **kwargs):\n"
         "    with open(os.environ['COUNTER'], 'a') as fh:\n"
@@ -920,7 +923,7 @@ def test_index_is_built_once_across_processes(tmp_path, monkeypatch):
         "RepoIndex.build = counted\n"
         "mcp_server._index(os.environ['TEST_ROOT'])\n")
     env = dict(os.environ, TEST_ROOT=str(repo), COUNTER=str(counter),
-               HARNESS_ALLOWED_ROOTS=str(repo),
+               RBG_ALLOWED_ROOTS=str(repo),
                PYTHONPATH=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     procs = [subprocess.Popen([sys.executable, str(worker)], env=env,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -1007,7 +1010,7 @@ def _mixed_repo(tmp_path):
 
 
 def test_path_class_weight_prefers_source(tmp_path):
-    from harness.retrieval import _path_class, PATH_WEIGHT
+    from rbg.retrieval import _path_class, PATH_WEIGHT
     assert _path_class("core.py") == "source"
     assert _path_class("docs/guide.md") == "docs"
     assert _path_class("tests/test_core.py") == "tests"
@@ -1030,7 +1033,7 @@ def test_retrieve_include_exclude_globs(tmp_path):
 
 
 def test_rank_tests_ignores_helpers(tmp_path):
-    from harness.index import is_test_chunk
+    from rbg.index import is_test_chunk
     repo = _mixed_repo(tmp_path)
     idx = RepoIndex.build(str(repo))
     helper = next(c for c in idx.chunks if c.symbol == "_helper")
@@ -1054,7 +1057,7 @@ def test_find_symbol_path_filter(tmp_path):
 
 
 def test_ledger_persists_to_store_and_mcp_reads_it(tmp_path):
-    from harness.verify import Ledger
+    from rbg.verify import Ledger
     repo = _db_repo(tmp_path)
     store = hdb.Store(str(repo))
     store.save_index(RepoIndex.build(str(repo)))
@@ -1067,7 +1070,7 @@ def test_ledger_persists_to_store_and_mcp_reads_it(tmp_path):
     assert traces and traces[0]["task_id"] == "t-db"
     mcp_server._INDEX_CACHE.clear()
     mcp_server._STORE_CACHE.clear()
-    assert not os.path.exists(os.path.join(str(repo), ".harness", "traces.jsonl"))
+    assert not os.path.exists(os.path.join(str(repo), ".rbg", "traces.jsonl"))
 
 
 def test_partial_pooling_borrows_from_other_repos(tmp_path):
@@ -1100,7 +1103,7 @@ def test_mcp_db_tools_and_resources(tmp_path):
                                    "method": "resources/templates/list"})["result"]["resourceTemplates"]
     assert any("ledger" in t["uriTemplate"] for t in templates)
     read = mcp_server.handle({"jsonrpc": "2.0", "id": 2, "method": "resources/read",
-                              "params": {"uri": f"harness://repo/db?root={repo}"}})
+                              "params": {"uri": f"rbg://repo/db?root={repo}"}})
     assert "contents" in read["result"]
     prompt = mcp_server.handle({"jsonrpc": "2.0", "id": 3, "method": "prompts/get",
                                 "params": {"name": "grounded_change",
@@ -1150,7 +1153,7 @@ def test_typecheck_unverified_only_when_checker_absent(tmp_path):
 
 
 def test_no_tests_collected_is_not_verified(tmp_path):
-    from harness.__main__ import BUGGY_SHOP
+    from rbg.__main__ import BUGGY_SHOP
     root = tmp_path / "no_tests"
     root.mkdir()
     (root / "shop.py").write_text(BUGGY_SHOP)
@@ -1158,6 +1161,24 @@ def test_no_tests_collected_is_not_verified(tmp_path):
                                                         task_id="nt1")
     assert report.status == "partial", report.to_dict()
     assert report.success is False
+    assert "tests" in report.unverified
+
+
+def test_all_skipped_is_not_verified(tmp_path):
+    from rbg.__main__ import BUGGY_SHOP
+    root = tmp_path / "skipped"
+    root.mkdir()
+    (root / "shop.py").write_text(BUGGY_SHOP)
+    (root / "test_shop.py").write_text(
+        "import pytest\n\n"
+        "@pytest.mark.skip(reason='nope')\n"
+        "def test_apply_discount():\n"
+        "    assert False\n")
+    report = Orchestrator(str(root), ScriptedLLM()).run("fix the discount calculation",
+                                                        task_id="sk1")
+    assert report.status == "partial", report.to_dict()
+    assert report.success is False
+    assert "tests_all_skipped" in report.scope_reductions
     assert "tests" in report.unverified
 
 
@@ -1176,7 +1197,7 @@ def test_hit_and_mcp_outputs_carry_revision(tmp_path):
 
 
 def test_tree_revision_is_content_based_not_metadata(tmp_path):
-    from harness.index import _tree_hash, _tree_signature
+    from rbg.index import _tree_hash, _tree_signature
     root = str(tmp_path / "rev")
     _make_demo_repo(root)
     path = os.path.join(root, "shop.py")
@@ -1207,7 +1228,7 @@ def test_index_cache_invalidates_after_edit(tmp_path):
 
 # -- plan + step-level drift checks ----------------------------------------- #
 def test_parse_plan_extracts_steps_and_files():
-    from harness.plan import parse_plan
+    from rbg.plan import parse_plan
     known = {"shop.py", "test_shop.py", "src/a.py"}
     p = parse_plan("1. Edit shop.py.\n2. Run test_shop.py.\n3. Mention nonexistent.py.", known)
     assert [s.action for s in p.steps] == ["edit", "verify", "edit"]
@@ -1216,14 +1237,14 @@ def test_parse_plan_extracts_steps_and_files():
 
 
 def test_read_only_plan_step_is_not_an_edit_commitment():
-    from harness.plan import parse_plan
+    from rbg.plan import parse_plan
     p = parse_plan("1. Inspect shop.py and test_shop.py.\n2. Edit shop.py.",
                    {"shop.py", "test_shop.py"})
     assert p.edit_files() == ["shop.py"]
 
 
 def test_scope_drift_flags_missing_and_extra():
-    from harness.plan import parse_plan, scope_drift
+    from rbg.plan import parse_plan, scope_drift
     p = parse_plan("1. Edit shop.py.\n2. Edit test_shop.py.", {"shop.py", "test_shop.py"})
     d = scope_drift(p, ["shop.py", "extra.py"])
     assert d.missing == ["test_shop.py"]
@@ -1232,7 +1253,7 @@ def test_scope_drift_flags_missing_and_extra():
 
 
 def test_audit_completion_flags_unedited_callers(tmp_path):
-    from harness.plan import audit_completion
+    from rbg.plan import audit_completion
     idx = _repo(tmp_path)
     comp = audit_completion(idx, ["beta_helper"], ["a.py"], [])
     assert "b.py" in comp["affected_files"]
@@ -1284,7 +1305,7 @@ def test_plan_audit_mcp_tool(tmp_path):
 
 
 def test_audit_completion_skips_generic_and_high_fanin_symbols(tmp_path):
-    from harness.plan import audit_completion
+    from rbg.plan import audit_completion
     (tmp_path / "common.py").write_text("def shared():\n    return 1\n")
     (tmp_path / "leaf.py").write_text("def rare():\n    return 2\n")
     (tmp_path / "caller.py").write_text("from leaf import rare\n\ndef c():\n    return rare()\n")
@@ -1302,7 +1323,7 @@ def test_audit_completion_skips_generic_and_high_fanin_symbols(tmp_path):
 
 # -- real LLM provider (OpenAI-compatible) ---------------------------------- #
 def test_parse_edits_accepts_fences_lists_and_bare_objects():
-    from harness.providers import parse_edits
+    from rbg.providers import parse_edits
     fenced = 'here you go\n```json\n{"edits": [{"path": "a.py", "content": "x = 1\\n"}]}\n```\ndone'
     assert [(o.path, o.content) for o in parse_edits(fenced)] == [("a.py", "x = 1\n")]
     assert parse_edits('{"edits": []}') == []
@@ -1312,7 +1333,7 @@ def test_parse_edits_accepts_fences_lists_and_bare_objects():
 
 
 def test_openai_compatible_llm_maps_reply_to_edit_ops(monkeypatch):
-    from harness.providers import OpenAICompatLLM
+    from rbg.providers import OpenAICompatLLM
     llm = OpenAICompatLLM(model="m", base_url="http://localhost:1/v1", api_key="sk-test")
     monkeypatch.setattr(llm, "_chat",
                         lambda system, user: '{"edits": [{"path": "shop.py", "content": "y"}]}')
@@ -1324,7 +1345,7 @@ def test_openai_compatible_llm_maps_reply_to_edit_ops(monkeypatch):
 def test_risk_split_is_temporal_with_held_out_calibration(tmp_path, monkeypatch):
     base = tmp_path / "g"
     base.mkdir()
-    monkeypatch.setenv("HARNESS_GLOBAL_DB", str(base / "global.db"))
+    monkeypatch.setenv("RBG_GLOBAL_DB", str(base / "global.db"))
     root, idx = _synthetic_ledger(tmp_path / "split", n=60)
     m = train_from_ledger(root, index=idx)
     r = m.metrics["risk"]
@@ -1338,7 +1359,7 @@ def test_risk_split_is_temporal_with_held_out_calibration(tmp_path, monkeypatch)
 def test_thin_ledger_marks_in_sample_split(tmp_path, monkeypatch):
     base = tmp_path / "g"
     base.mkdir()
-    monkeypatch.setenv("HARNESS_GLOBAL_DB", str(base / "global.db"))
+    monkeypatch.setenv("RBG_GLOBAL_DB", str(base / "global.db"))
     root, idx = _synthetic_ledger(tmp_path / "tiny", n=10)
     m = train_from_ledger(root, index=idx)
     assert m.metrics["risk"]["split"] == "in_sample"
@@ -1346,13 +1367,13 @@ def test_thin_ledger_marks_in_sample_split(tmp_path, monkeypatch):
 
 # -- metric intervals ------------------------------------------------------- #
 def test_wilson_ci_and_metric_intervals(tmp_path, monkeypatch):
-    from harness.training import wilson_ci
+    from rbg.training import wilson_ci
     lo, hi = wilson_ci(50, 100)
     assert 0.0 <= lo < 0.5 < hi <= 1.0
     assert wilson_ci(0, 0) == [0.0, 1.0]
     base = tmp_path / "g"
     base.mkdir()
-    monkeypatch.setenv("HARNESS_GLOBAL_DB", str(base / "global.db"))
+    monkeypatch.setenv("RBG_GLOBAL_DB", str(base / "global.db"))
     root, idx = _synthetic_ledger(tmp_path / "ci", n=40)
     r = train_from_ledger(root, index=idx).metrics["risk"]
     assert len(r["conformal_coverage_ci"]) == 2
@@ -1361,7 +1382,7 @@ def test_wilson_ci_and_metric_intervals(tmp_path, monkeypatch):
 
 # -- selector labels are regression evidence, not historical failure -------- #
 def test_selector_labels_mark_only_new_regressions():
-    from harness.training import selector_examples
+    from rbg.training import selector_examples
     entries = [
         {"component": "test_selector", "task_id": "t0",
          "result": {"changed_symbols": ["a"]}},
@@ -1395,7 +1416,7 @@ def test_benchmark_smoke_suite_and_compare():
 
 def test_cli_eval_and_compare_forward_their_flags(tmp_path):
     import json
-    from harness.__main__ import main
+    from rbg.__main__ import main
     suite = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                          "eval", "suites", "smoke")
     out = tmp_path / "baseline.json"
@@ -1418,7 +1439,7 @@ def test_mcp_run_checks_compile_passes_under_the_sandbox(tmp_path):
 
 # -- read path never trains ------------------------------------------------ #
 def test_read_path_does_not_train_models(tmp_path):
-    from harness import db as hdb
+    from rbg import db as hdb
     root, _ = _synthetic_ledger(tmp_path / "noretrain")
     mcp_server._LEARNED_CACHE.clear()
     mcp_server._INDEX_CACHE.clear()
@@ -1448,11 +1469,11 @@ def test_search_code_reports_latency_and_degrades_over_budget(tmp_path, monkeypa
     mcp_server._RETRIEVER_CACHE.clear()
     mcp_server._LEARNED_CACHE.clear()
     _call("train_models", {"root": root})
-    monkeypatch.setattr(mcp_server, "_READ_BUDGET_MS", -1)
+    monkeypatch.setattr(mcp_service, "_READ_BUDGET_MS", -1)
     sc = _call("search_code", {"root": root, "query": "compute"})["result"]["structuredContent"]
     assert sc["degraded"] is True and sc["reranker"] == "skipped_over_budget"
     assert sc["latency_ms"] >= 0 and sc["budget_ms"] == -1
-    monkeypatch.setattr(mcp_server, "_READ_BUDGET_MS", 10 ** 9)
+    monkeypatch.setattr(mcp_service, "_READ_BUDGET_MS", 10 ** 9)
     sc2 = _call("search_code", {"root": root, "query": "compute"})["result"]["structuredContent"]
     assert sc2["degraded"] is False and sc2["reranker"] == "trained"
 
@@ -1483,7 +1504,7 @@ def test_perf_bench_reports_p95_and_budget(tmp_path):
 
 
 def test_clean_query_dedupes_and_caps():
-    from harness.retrieval import _QUERY_TERM_CAP, _clean_query
+    from rbg.retrieval import _QUERY_TERM_CAP, _clean_query
     terms = _clean_query("compute compute the total total value").split()
     assert len(terms) == len(set(terms))
     long = " ".join(f"w{i}" for i in range(_QUERY_TERM_CAP + 50))
@@ -1491,8 +1512,8 @@ def test_clean_query_dedupes_and_caps():
 
 
 def test_expand_adds_same_symbol_sibling(tmp_path):
-    from harness.index import RepoIndex
-    from harness.retrieval import Hit, HybridRetriever
+    from rbg.index import RepoIndex
+    from rbg.retrieval import Hit, HybridRetriever
     (tmp_path / "a.py").write_text("def shared():\n    return 1\n")
     (tmp_path / "b.py").write_text("def shared():\n    return 2\n")
     idx = RepoIndex.build(str(tmp_path))
@@ -1518,9 +1539,9 @@ def test_search_code_result_cache_isolated_from_callers(tmp_path):
 
 
 def test_fts_backend_serves_candidates_and_falls_back(tmp_path):
-    from harness import db as hdb
-    from harness.index import RepoIndex
-    from harness.retrieval import BM25, FTSBackend
+    from rbg import db as hdb
+    from rbg.index import RepoIndex
+    from rbg.retrieval import BM25, FTSBackend
     (tmp_path / "m.py").write_text(
         "def compute_metric():\n    return 42\n\n\ndef other_thing():\n    return 1\n")
     idx = RepoIndex.build(str(tmp_path))
@@ -1534,7 +1555,7 @@ def test_fts_backend_serves_candidates_and_falls_back(tmp_path):
 
 
 def test_lsi_refresh_reuses_projector():
-    from harness.retrieval import LSIEncoder
+    from rbg.retrieval import LSIEncoder
     texts = ["alpha beta gamma", "delta epsilon zeta", "alpha delta theta"]
     enc = LSIEncoder(k=2).fit(texts)
     vocab, proj = dict(enc.vocab), enc.proj.copy()
@@ -1544,7 +1565,7 @@ def test_lsi_refresh_reuses_projector():
 
 
 def test_warm_start_after_revision_change(tmp_path):
-    from harness import mcp_server
+    from rbg import mcp_server
     root = str(tmp_path)
     (tmp_path / "m.py").write_text("def alpha():\n    return 1\n\n\ndef beta():\n    return 2\n")
     mcp_server._INDEX_CACHE.clear()
@@ -1558,7 +1579,7 @@ def test_warm_start_after_revision_change(tmp_path):
 
 # -- JSON plan document (Workstream H) ------------------------------------- #
 def test_plan_editor_create_append_attach_and_depth_cap():
-    from harness.plan import PlanEditor
+    from rbg.plan import PlanEditor
     ed = PlanEditor.create("r", "t", "T", [{"title": "a"}])
     assert len(ed.doc.sections) == 1
     cur = ed.append({"title": "b"})
@@ -1570,7 +1591,7 @@ def test_plan_editor_create_append_attach_and_depth_cap():
 
 
 def test_plan_complete_requires_passing_validation():
-    from harness.plan import PlanEditor
+    from rbg.plan import PlanEditor
     ed = PlanEditor.create("r", "t", "T", [{"title": "a"}])
     sid = ed.doc.sections[0].id
     out = ed.complete(sid)
@@ -1581,7 +1602,7 @@ def test_plan_complete_requires_passing_validation():
 
 
 def test_plan_complete_uses_validator_callable():
-    from harness.plan import PlanEditor
+    from rbg.plan import PlanEditor
     ed = PlanEditor.create("r", "t", "T", [{"title": "a"}],
                            validator=lambda sec: {"verdict": "pass", "evidence": "auto"})
     ed.complete(ed.doc.sections[0].id)
@@ -1589,7 +1610,7 @@ def test_plan_complete_uses_validator_callable():
 
 
 def test_plan_parent_rollup_and_mutation_roundtrip():
-    from harness.plan import PlanEditor
+    from rbg.plan import PlanEditor
     ed = PlanEditor.create("r", "t", "T", [{"title": "parent"}])
     parent = ed.doc.sections[0]
     child = ed.attach(parent.id, {"title": "child"})
@@ -1628,7 +1649,7 @@ def test_mcp_plan_tools_roundtrip_and_persist(tmp_path):
     mcp_server._STORE_CACHE.clear()          # force a fresh read from disk
     got2 = _call("plan_get", {"root": root, "task_id": "t1"})["result"]["structuredContent"]
     assert got2["plan"]["version"] == got["plan"]["version"]
-    from harness import db as hdb
+    from rbg import db as hdb
     actions = {e["result"]["action"] for e in hdb.Store(root).read_ledger()
                if e["component"] == "plan"}
     assert {"create", "append", "complete"} <= actions
@@ -1670,7 +1691,7 @@ def test_hard_suite_makes_retrieval_non_trivial():
 
 
 def test_replay_llm_uses_the_edit_contract():
-    from harness.providers import ReplayLLM
+    from rbg.providers import ReplayLLM
     llm = ReplayLLM({"plan": "p", "edits": [{"path": "a.py", "content": "x = 1\n"}]})
     assert llm.plan("t", []) == "p"
     edits = llm.edit("t", "p", [])
@@ -1680,7 +1701,7 @@ def test_replay_llm_uses_the_edit_contract():
 def test_parse_edits_takes_first_object_from_repeated_truncated_reply():
     # Live reasoning models sometimes echo the object and get cut off mid-copy
     # (finish_reason=length); the first complete object must still parse.
-    from harness.providers import parse_edits
+    from rbg.providers import parse_edits
     text = ('{"edits": [{"path": "a.py", "content": "x = 1\\n"}]}\n\n'
             '{"edits": [{"path": "a.py", "content": "x = 1')
     edits = parse_edits(text)
@@ -1688,14 +1709,14 @@ def test_parse_edits_takes_first_object_from_repeated_truncated_reply():
 
 
 def test_parse_edits_rejects_a_reply_with_no_json():
-    from harness.providers import parse_edits
+    from rbg.providers import parse_edits
     with pytest.raises(ValueError):
         parse_edits("I could not complete this task.")
 
 
 def test_replay_example_end_to_end(tmp_path):
     import shutil
-    from harness.__main__ import cmd_replay
+    from rbg.__main__ import cmd_replay
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     root = tmp_path / "repo"
     shutil.copytree(os.path.join(here, "examples", "replay"), root)
@@ -1754,7 +1775,7 @@ def test_swebench_retrieval_scores_gold_files(tmp_path):
 
 def test_swebench_index_cache_is_keyed_by_commit(tmp_path, monkeypatch):
     from eval.swebench_retrieval import load_or_build_index
-    from harness.index import RepoIndex
+    from rbg.index import RepoIndex
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -1807,7 +1828,7 @@ def test_pts_score_selection_uses_dynamic_truth():
 
 # -- cross-encoder non-fallback branch (F5) --------------------------------- #
 def test_cross_encoder_rerank_uses_model_branch(tmp_path):
-    from harness import retrieval_heavy
+    from rbg import retrieval_heavy
     idx = _repo(tmp_path)
     hits = HybridRetriever(idx).retrieve("beta_helper", limit=5)
     rr = retrieval_heavy.CrossEncoderReranker()
@@ -1835,7 +1856,7 @@ class _BagModel:
 
 
 def test_semantic_encoder_ranks_by_embedding():
-    from harness.retrieval_heavy import SentenceTransformerEncoder
+    from rbg.retrieval_heavy import SentenceTransformerEncoder
     enc = SentenceTransformerEncoder(model=_BagModel())
 
     class C:
@@ -1850,7 +1871,7 @@ def test_semantic_encoder_ranks_by_embedding():
 
 
 def test_semantic_encoder_caches_unchanged_chunks():
-    from harness.retrieval_heavy import SentenceTransformerEncoder
+    from rbg.retrieval_heavy import SentenceTransformerEncoder
     calls = []
 
     class CountingModel(_BagModel):
@@ -1874,13 +1895,13 @@ def test_semantic_encoder_caches_unchanged_chunks():
 
 
 def test_heavy_encoder_is_opt_in(monkeypatch):
-    from harness import retrieval_heavy
+    from rbg import retrieval_heavy
     monkeypatch.delenv("RBG_EMBEDDING_MODEL", raising=False)
     assert retrieval_heavy.encoder() is None
 
 
 def test_encoder_device_resolution(monkeypatch):
-    from harness import retrieval_heavy
+    from rbg import retrieval_heavy
     monkeypatch.setenv("RBG_EMBEDDING_DEVICE", "cuda")
     assert retrieval_heavy._resolve_device() == "cuda"
     assert retrieval_heavy._resolve_device("cpu") == "cpu"  # explicit wins
@@ -1889,8 +1910,8 @@ def test_encoder_device_resolution(monkeypatch):
 
 
 def test_encoder_from_state_dispatches_semantic_kind(monkeypatch):
-    from harness import retrieval_heavy
-    from harness.retrieval import encoder_from_state
+    from rbg import retrieval_heavy
+    from rbg.retrieval import encoder_from_state
     monkeypatch.setattr(retrieval_heavy, "available", lambda: True)
     monkeypatch.setattr(retrieval_heavy, "_load_model", lambda _p, _d: _BagModel())
     enc = encoder_from_state({"kind": "sentence-transformer", "model": "fake", "dim": 384},
@@ -1906,9 +1927,9 @@ def test_encoder_from_state_dispatches_semantic_kind(monkeypatch):
 # -- experience memory is causal (F3) --------------------------------------- #
 def test_experience_memory_causes_resolution(tmp_path):
     import re
-    from harness import db
-    from harness.retrieval import EXPERIENCE_DIM, experience_encoder
-    from harness.__main__ import FIXED_SHOP
+    from rbg import db
+    from rbg.retrieval import EXPERIENCE_DIM, experience_encoder
+    from rbg.__main__ import FIXED_SHOP
     root = str(tmp_path / "exp-causal")
     _make_demo_repo(root)
     task = "fix the discount calculation so a 10 percent discount applies correctly"
@@ -1935,8 +1956,8 @@ def test_experience_memory_causes_resolution(tmp_path):
 
 
 def test_patch_head_trains_from_regression_ledger(tmp_path):
-    from harness import db as hdb
-    from harness.verify import Ledger
+    from rbg import db as hdb
+    from rbg.verify import Ledger
     root = tmp_path / "patch-ledger"
     root.mkdir()
     (root / "m.py").write_text("def f():\n    return 1\n")
@@ -1980,7 +2001,7 @@ def _git_repo(tmp_path):
 
 
 def test_plan_section_schema_roundtrip():
-    from harness.plan import PlanSection
+    from rbg.plan import PlanSection
     row = {"title": "x", "files": ["a.py"], "allowed_paths": ["docs/*"],
            "symbols": ["alpha"], "artifacts": ["out.json"],
            "acceptance": [{"id": "t", "kind": "check", "name": "pytest"}],
@@ -1993,7 +2014,7 @@ def test_plan_section_schema_roundtrip():
 
 
 def test_git_changed_collects_modified_and_untracked(tmp_path):
-    from harness.diffing import git_changed
+    from rbg.diffing import git_changed
     root = _git_repo(tmp_path)
     (root / "a.py").write_text("x = 2\n")
     (root / "b.py").write_text("y = 1\n")
@@ -2020,7 +2041,7 @@ def _workspace_repo(workspace, name):
 
 
 def test_workspace_changed_aggregates_nested_repos(tmp_path):
-    from harness.diffing import workspace_changed
+    from rbg.diffing import workspace_changed
     ws = tmp_path / "workspace"
     ws.mkdir()
     a = _workspace_repo(ws, "repo_a")
@@ -2101,7 +2122,7 @@ def test_plan_complete_requires_acceptance_evidence(tmp_path):
 
 def test_drift_model_heuristic_and_training():
     import numpy as np
-    from harness.models import DRIFT_FEATURE_NAMES, DriftModel, drift_features
+    from rbg.models import DRIFT_FEATURE_NAMES, DriftModel, drift_features
     clean = drift_features({"declared_files": ["a.py"], "status": "open"},
                            {"blockers": [], "warnings": []}, 1)
     bad = drift_features({"declared_files": ["a.py"], "missing": ["a.py"],
@@ -2119,7 +2140,7 @@ def test_drift_model_heuristic_and_training():
 
 
 def test_drift_examples_learn_from_logged_audits():
-    from harness.training import drift_examples
+    from rbg.training import drift_examples
     good = {"sections": [{"section_id": "a", "status": "open",
                           "declared_files": ["a.py"], "missing": [],
                           "acceptance": [], "acceptance_failures": [],
@@ -2143,15 +2164,15 @@ def test_drift_examples_learn_from_logged_audits():
 
 
 def test_norm_preserves_dot_directories():
-    from harness.diffing import _norm
+    from rbg.diffing import _norm
     assert _norm("./.github/workflows/ci.yml") == ".github/workflows/ci.yml"
     assert _norm(".github/workflows/ci.yml") == ".github/workflows/ci.yml"
 
 
 def test_plan_artifact_path_traversal_is_rejected(tmp_path):
-    from harness.diffing import ChangedSet
-    from harness.plan import PlanEditor
-    from harness.plan_drift import audit_document
+    from rbg.diffing import ChangedSet
+    from rbg.plan import PlanEditor
+    from rbg.plan_drift import audit_document
     ed = PlanEditor.create("r", "t", "T", [{
         "title": "x", "files": ["a.py"],
         "acceptance": [{"id": "out", "kind": "artifact", "path": "../secret"}]}])
@@ -2161,9 +2182,9 @@ def test_plan_artifact_path_traversal_is_rejected(tmp_path):
 
 
 def test_acceptance_cannot_self_certify():
-    from harness.diffing import ChangedSet
-    from harness.plan import PlanEditor
-    from harness.plan_drift import audit_document
+    from rbg.diffing import ChangedSet
+    from rbg.plan import PlanEditor
+    from rbg.plan_drift import audit_document
     ed = PlanEditor.create("r", "t", "T", [{
         "title": "x", "files": ["a.py"],
         "acceptance": [{"id": "t", "kind": "check", "name": "pytest",
@@ -2201,7 +2222,7 @@ def test_scope_change_is_reported(tmp_path):
 
 
 def test_git_changed_resolves_option_like_base(tmp_path):
-    from harness.diffing import git_changed
+    from rbg.diffing import git_changed
     root = _git_repo(tmp_path)
     (root / "a.py").write_text("x = 2\n")
     changed = git_changed(str(root), "--help")
@@ -2210,9 +2231,9 @@ def test_git_changed_resolves_option_like_base(tmp_path):
 
 
 def test_allowed_paths_exempt_matching_changes(tmp_path):
-    from harness.diffing import ChangedSet
-    from harness.plan import PlanEditor
-    from harness.plan_drift import audit_document
+    from rbg.diffing import ChangedSet
+    from rbg.plan import PlanEditor
+    from rbg.plan_drift import audit_document
     ed = PlanEditor.create("r", "t", "T", [{
         "title": "x", "files": ["a.py"], "allowed_paths": ["docs/*"]}])
     report = audit_document(
@@ -2221,9 +2242,9 @@ def test_allowed_paths_exempt_matching_changes(tmp_path):
 
 
 def test_changed_set_cap_blocks(tmp_path):
-    from harness.diffing import ChangedSet
-    from harness.plan import PlanEditor
-    from harness.plan_drift import MAX_CHANGED_FILES, audit_document
+    from rbg.diffing import ChangedSet
+    from rbg.plan import PlanEditor
+    from rbg.plan_drift import MAX_CHANGED_FILES, audit_document
     ed = PlanEditor.create("r", "t", "T", [{"title": "x", "files": ["a.py"]}])
     fake = [f"f{i}.py" for i in range(MAX_CHANGED_FILES + 1)]
     report = audit_document(ed.doc, ChangedSet(modified=fake), str(tmp_path))
@@ -2232,7 +2253,7 @@ def test_changed_set_cap_blocks(tmp_path):
 
 def test_no_commit_repo_reports_untracked(tmp_path):
     import subprocess
-    from harness.diffing import git_changed
+    from rbg.diffing import git_changed
     root = tmp_path / "repo"
     root.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=root, check=True)
@@ -2243,9 +2264,9 @@ def test_no_commit_repo_reports_untracked(tmp_path):
 
 
 def test_artifact_inside_root_passes(tmp_path):
-    from harness.diffing import ChangedSet
-    from harness.plan import PlanEditor
-    from harness.plan_drift import audit_document
+    from rbg.diffing import ChangedSet
+    from rbg.plan import PlanEditor
+    from rbg.plan_drift import audit_document
     (tmp_path / "out.json").write_text("{}\n")
     ed = PlanEditor.create("r", "t", "T", [{
         "title": "x", "files": ["a.py"],
@@ -2296,7 +2317,7 @@ def test_default_index_path_waits_for_a_small_repo(tmp_path, monkeypatch):
     repo = tmp_path / "default_async"
     repo.mkdir()
     (repo / "core.py").write_text("def beta_helper():\n    return 42\n")
-    monkeypatch.delenv("HARNESS_INDEX_ASYNC", raising=False)
+    monkeypatch.delenv("RBG_INDEX_ASYNC", raising=False)
     mcp_server._INDEX_CACHE.clear()
     mcp_server._INDEX_SIGNATURE.clear()
     mcp_server._BUILD_STATE.clear()
@@ -2307,8 +2328,8 @@ def test_default_index_path_waits_for_a_small_repo(tmp_path, monkeypatch):
 def test_retriever_serves_lexical_while_semantic_warms(tmp_path, monkeypatch):
     """A cold semantic build must not block search_code; lexical answers first."""
     import time
-    from harness.retrieval import LexicalOnlyEncoder
-    monkeypatch.setattr(mcp_server, "LSI_MAX_CORPUS", 10 ** 9)
+    from rbg.retrieval import LexicalOnlyEncoder
+    monkeypatch.setattr(retrieval, "LSI_MAX_CORPUS", 10 ** 9)
     root = str(tmp_path)
     (tmp_path / "m.py").write_text("def alpha():\n    return 1\n")
     mcp_server._INDEX_CACHE.clear()

@@ -1,17 +1,17 @@
 """Turso / libSQL persistence layer for the harness.
 
-One libSQL database per repository lives at ``<repo>/.harness/harness.db`` and
+One libSQL database per repository lives at ``<repo>/.rbg/rbg.db`` and
 holds the index (files, chunks, symbols, reference edges), the dense chunk
 vectors, the append-only execution ledger and the learned model artifacts.
-A second, user-scoped database at ``~/.local/share/harness/global.db`` is
+A second, user-scoped database at ``~/.local/share/rbg/global.db`` is
 ``ATTACH``-ed as ``global`` so a repo-local model can be shrunk toward a
 cross-repo pooled prior during training (small n -> pooled, large n -> local).
 
 libSQL is a drop-in superset of SQLite: FTS5 gives lexical retrieval, a
 ``F32_BLOB`` column plus a ``libsql_vector_idx`` gives an on-disk approximate
 vector index, and ``vector_distance_cos`` scores a query against it.  Setting
-``HARNESS_DB_URL`` (+ ``HARNESS_DB_AUTH_TOKEN``, and optionally
-``HARNESS_DB_SYNC_URL`` for an embedded replica) points the same code at a
+``RBG_DB_URL`` (+ ``RBG_DB_AUTH_TOKEN``, and optionally
+``RBG_DB_SYNC_URL`` for an embedded replica) points the same code at a
 remote Turso server; the default is the local file.
 
 Dependency note: ``libsql`` is a hard dependency — Turso/libSQL is the only
@@ -36,27 +36,27 @@ import libsql
 from . import persist
 
 SCHEMA_VERSION = 2
-GLOBAL_DB = os.path.join(os.path.expanduser("~"), ".local", "share", "harness", "global.db")
+GLOBAL_DB = os.path.join(os.path.expanduser("~"), ".local", "share", "rbg", "global.db")
 
 
 def global_db_path() -> str:
     """The shared, cross-repo database (overridable for tests/CI)."""
-    return os.environ.get("HARNESS_GLOBAL_DB") or GLOBAL_DB
+    return os.environ.get("RBG_GLOBAL_DB") or GLOBAL_DB
 
 
 def db_path(root: str) -> str:
     """Where a repo's libSQL database lives.
 
-    Default is a central, per-repo file under ``~/.local/share/harness/repos``
+    Default is a central, per-repo file under ``~/.local/share/rbg/repos``
     (keyed by the repo path), so probing an arbitrary snapshot — including a
     read-only one — never writes into the repo itself.  Set
-    ``HARNESS_DB_IN_REPO=1`` for the portable ``<repo>/.harness/harness.db``,
-    or ``HARNESS_DB_DIR`` / ``HARNESS_DB_URL`` to relocate/remote it."""
-    default_root = os.environ.get("HARNESS_DB_ROOT") or os.path.join(
-        os.path.expanduser("~"), ".local", "share", "harness", "repos")
-    if os.environ.get("HARNESS_DB_IN_REPO") or os.environ.get("HARNESS_DB_DIR"):
-        base = os.environ.get("HARNESS_DB_DIR") or os.path.join(os.path.abspath(root), ".harness")
-        return os.path.join(base, "harness.db")
+    ``RBG_DB_IN_REPO=1`` for the portable ``<repo>/.rbg/rbg.db``,
+    or ``RBG_DB_DIR`` / ``RBG_DB_URL`` to relocate/remote it."""
+    default_root = os.environ.get("RBG_DB_ROOT") or os.path.join(
+        os.path.expanduser("~"), ".local", "share", "rbg", "repos")
+    if os.environ.get("RBG_DB_IN_REPO") or os.environ.get("RBG_DB_DIR"):
+        base = os.environ.get("RBG_DB_DIR") or os.path.join(os.path.abspath(root), ".rbg")
+        return os.path.join(base, "rbg.db")
     key = hashlib.sha1(os.path.abspath(root).encode()).hexdigest()[:16]
     return os.path.join(default_root, f"{key}.db")
 
@@ -102,10 +102,10 @@ class Store:
         self.root = os.path.abspath(root)
         self.path = db_path(self.root)
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        url = url or os.environ.get("HARNESS_DB_URL") or f"file:{self.path}"
-        auth_token = auth_token or os.environ.get("HARNESS_DB_AUTH_TOKEN", "")
-        sync_url = sync_url or os.environ.get("HARNESS_DB_SYNC_URL") or None
-        self._busy_timeout_s = int(os.environ.get("HARNESS_DB_BUSY_TIMEOUT_MS", "30000")) / 1000
+        url = url or os.environ.get("RBG_DB_URL") or f"file:{self.path}"
+        auth_token = auth_token or os.environ.get("RBG_DB_AUTH_TOKEN", "")
+        sync_url = sync_url or os.environ.get("RBG_DB_SYNC_URL") or None
+        self._busy_timeout_s = int(os.environ.get("RBG_DB_BUSY_TIMEOUT_MS", "30000")) / 1000
         self._txn_depth = 0
         # AUTOCOMMIT: every multi-statement write takes its own BEGIN IMMEDIATE.
         self.conn = libsql.connect(url, auth_token=auth_token, sync_url=sync_url,
@@ -125,7 +125,7 @@ class Store:
             pass
         if not self._local_file:
             return
-        sync = (os.environ.get("HARNESS_DB_SYNCHRONOUS") or "FULL").upper()
+        sync = (os.environ.get("RBG_DB_SYNCHRONOUS") or "FULL").upper()
         try:
             self.conn.execute(f"PRAGMA synchronous = "
                               f"{sync if sync in ('FULL', 'NORMAL') else 'FULL'}")

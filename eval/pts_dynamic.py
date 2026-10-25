@@ -34,9 +34,9 @@ import xml.etree.ElementTree as ET
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from harness.index import RepoIndex, is_test_chunk  # noqa: E402
-from harness.models import TestSelector  # noqa: E402
-from harness.retrieval import tokenize  # noqa: E402
+from rbg.index import RepoIndex, is_test_chunk  # noqa: E402
+from rbg.models import TestSelector  # noqa: E402
+from rbg.retrieval import tokenize  # noqa: E402
 
 PROBE = "rbg-probe"
 

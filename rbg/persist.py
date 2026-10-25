@@ -1,7 +1,7 @@
 """Safe artifact persistence.
 
 Model and encoder artifacts used to be ``pickle.loads``-ed straight from the
-database.  A database is attacker-influenced (``HARNESS_DB_IN_REPO=1`` puts it
+database.  A database is attacker-influenced (``RBG_DB_IN_REPO=1`` puts it
 inside the checkout; a remote URL is another trust boundary), so that was
 arbitrary code execution on load.
 
@@ -27,9 +27,9 @@ _ALLOWED_BUILTINS = {
     "str", "int", "float", "bool", "tuple", "list", "dict", "object",
 }
 _ALLOWED_PREFIXES = (
-    "harness.models.",
-    "harness.retrieval.",
-    "harness.training.",
+    "rbg.models.",
+    "rbg.retrieval.",
+    "rbg.training.",
     "numpy.",
     "numpy.core.",
     "numpy._core.",

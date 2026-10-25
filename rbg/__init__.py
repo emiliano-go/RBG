@@ -1,4 +1,4 @@
-"""RBG Harness: one main generative LLM plus deterministic control-plane,
+"""RBG: one main generative LLM plus deterministic control-plane,
 hybrid retrieval, conventional verification, and small learned models.
 
 Only numpy is required.  The determinism baseline (index, retrieval, gates,

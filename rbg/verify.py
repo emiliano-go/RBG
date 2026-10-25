@@ -91,12 +91,12 @@ class Sandbox:
 
     def _env(self) -> dict[str, str]:
         allow = set(_ENV_ALLOW)
-        allow.update(e for e in os.environ.get("HARNESS_ENV_ALLOW", "").split(",") if e)
+        allow.update(e for e in os.environ.get("RBG_ENV_ALLOW", "").split(",") if e)
         env = {}
         for k, v in os.environ.items():
             if k in allow or any(k.startswith(p) for p in _ENV_ALLOW_PREFIX):
                 env[k] = v
-        env["HARNESS_SANDBOX"] = "1"
+        env["RBG_SANDBOX"] = "1"
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         # The repository is mounted read-only; compile checks still want to write
         # bytecode, so redirect it beneath the writable /tmp the sandbox exposes.
@@ -116,7 +116,14 @@ class Sandbox:
             raise TypeError("Sandbox.run takes a non-empty argv list, never a shell string")
         cwd = resolve_within(self.root, cwd or self.root)
         iso = self.isolation()
-        full = [*iso.prefix, *argv]
+        prefix = list(iso.prefix)
+        if iso.isolated:
+            # The repo is mounted at a fixed path; translate the host cwd.
+            rel = os.path.relpath(cwd, self.root)
+            sandbox_cwd = iso.workspace if rel == "." else f"{iso.workspace}/{rel}"
+            flag = "--chdir" if iso.backend == "bwrap" else "--cwd"
+            prefix[-1:-1] = [flag, sandbox_cwd]
+        full = [*prefix, *argv]
         command = " ".join(argv)
         started = time.monotonic()
         timed_out = False
@@ -151,6 +158,7 @@ class TestOutcome:
 
 _PYTEST_LINE = re.compile(r"^(?P<id>[\w./:\\-]+::[\w:\[\].\-]+)\s+(?P<status>PASSED|FAILED|ERROR|SKIPPED)")
 _PYTEST_SUMMARY = re.compile(r"^(?P<status>PASSED|FAILED|ERROR|SKIPPED)\s+(?P<id>[\w./:\\-]+::[\w:\[\].\-]+)")
+_PYTEST_SKIP_LINE = re.compile(r"^SKIPPED\s+\[\d+\]\s+(?P<id>[^:]+):(?P<line>\d+)")
 _STATUS = {"PASSED": "passed", "FAILED": "failed", "ERROR": "error", "SKIPPED": "skipped"}
 
 
@@ -161,12 +169,19 @@ def parse_pytest(output: str) -> list[TestOutcome]:
         m = _PYTEST_LINE.match(line) or _PYTEST_SUMMARY.match(line)
         if m:
             outcomes.append(TestOutcome(m.group("id"), _STATUS.get(m.group("status"), "unknown")))
+            continue
+        # pytest -rA reports skips as ``SKIPPED [1] test_x.py:2: reason`` with
+        # no test id, so an all-skipped suite would otherwise look like an
+        # unparsed run.
+        skip = _PYTEST_SKIP_LINE.match(line)
+        if skip:
+            outcomes.append(TestOutcome(skip.group("id"), "skipped"))
     return outcomes
 
 
 class Verifier:
     """Conventional verification gates (spec 5.1, 6.6-6.9).  Commands come from
-    the detected :mod:`harness.checks` toolchain, so a non-Python repository is
+    the detected :mod:`rbg.checks` toolchain, so a non-Python repository is
     checked with its own tools rather than being silently untouched."""
 
     def __init__(self, sandbox: Sandbox) -> None:

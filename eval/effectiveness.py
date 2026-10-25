@@ -1,4 +1,4 @@
-"""Effectiveness evaluation for the RBG Harness, run against a real repo.
+"""Effectiveness evaluation for the RBG, run against a real repo.
 
 Measures exactly the metrics the spec asks for (spec 5.2, 5.4, 9.2):
 
@@ -26,9 +26,9 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from harness.index import RepoIndex, is_test_chunk
-from harness.models import TestSelector
-from harness.retrieval import BM25, DenseEncoder, HybridRetriever, LSIEncoder, tokenize
+from rbg.index import RepoIndex, is_test_chunk
+from rbg.models import TestSelector
+from rbg.retrieval import BM25, DenseEncoder, HybridRetriever, LSIEncoder, tokenize
 
 
 def symbol_queries(index: RepoIndex) -> list[tuple[str, tuple[str, int], str]]:

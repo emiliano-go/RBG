@@ -16,14 +16,14 @@ a deterministic gate.
 
 | Boundary | Control | Where |
 |---|---|---|
-| Repo path → filesystem | Containment: `resolve_within` resolves symlinks and rejects anything outside the root (`..`, sibling-prefix, symlink escape). | `harness/paths.py` |
-| MCP client → repository | Deny by default: no path is served unless it is inside `HARNESS_ALLOWED_ROOTS`. The installer grants only explicitly named roots; it never defaults to `$HOME` and refuses `/`. | `harness/mcp_server.py`, `harness/install.py` |
-| Model output → edits | Every edit path goes through `resolve_within`; writes land in a disposable git worktree, and the caller's checkout is never mutated. | `harness/workspace.py`, `harness/orchestrator.py` |
-| Command → OS | A required isolation backend (`bwrap`, then `nsjail`), probed once with a trivial command; commands run argv-only (`shell=False`). | `harness/isolation.py`, `harness/verify.py` |
-| Parent env → child | Allowlist only (`PATH`, `HOME`, `LANG`, temp vars, `LC_*`, `PYTHON*`), never a denylist; extend deliberately with `HARNESS_ENV_ALLOW`. | `harness/verify.py` |
-| Model artifact → process | Persisted models/encoders are hash-checked and decoded by a whitelist unpickler; an unsigned or tampered artifact is a miss, never executed. | `harness/persist.py`, `harness/db.py` |
-| Repo files → context | Credential-shaped files (`.env*`, `*.pem`, `*.key`, `id_rsa*`, credential JSON) are never indexed unless `HARNESS_ALLOW_SENSITIVE=1`. | `harness/index.py` |
-| Evidence → status | `verified` is derived from recorded command results, never from `all([])`. An unisolated run can never be `verified`. | `harness/status.py` |
+| Repo path → filesystem | Containment: `resolve_within` resolves symlinks and rejects anything outside the root (`..`, sibling-prefix, symlink escape). | `rbg/paths.py` |
+| MCP client → repository | Deny by default: no path is served unless it is inside `RBG_ALLOWED_ROOTS`. The installer grants only explicitly named roots; it never defaults to `$HOME` and refuses `/`. | `rbg/mcp_service.py`, `rbg/install.py` |
+| Model output → edits | Every edit path goes through `resolve_within`; writes land in a disposable git worktree (with the caller's dirty/untracked start state applied) or a temporary copy, never the checkout. The full diff is exported before cleanup. | `rbg/workspace.py`, `rbg/orchestrator.py` |
+| Command → OS | A required isolation backend (`bwrap`, then `nsjail`), probed once; commands run argv-only inside a fixed mount point with host home directories hidden and networking off. | `rbg/isolation.py`, `rbg/verify.py` |
+| Parent env → child | Allowlist only (`PATH`, `HOME`, `LANG`, temp vars, `LC_*`, `PYTHON*`), never a denylist; extend deliberately with `RBG_ENV_ALLOW`. | `rbg/verify.py` |
+| Model artifact → process | Persisted models/encoders are hash-checked and decoded by a whitelist unpickler; an unsigned or tampered artifact is a miss, never executed. Downloaded checkpoints are pinned to immutable revisions and verified against an exact file set. | `rbg/persist.py`, `rbg/db.py` |
+| Repo files → context | Credential-shaped files (`.env*`, `*.pem`, `*.key`, `id_rsa*`, credential JSON) are never indexed unless `RBG_ALLOW_SENSITIVE=1`. | `rbg/index.py` |
+| Evidence → status | `verified` is derived from recorded command results, never from `all([])`. It requires at least one passing test, rejects all-skipped/unparsed suites, and an unisolated run can never be `verified`. | `rbg/status.py` |
 
 ## Adversaries considered
 
@@ -47,7 +47,7 @@ a deterministic gate.
 - **The isolation backend is trusted.** `bwrap`/`nsjail` are assumed sound; the
   harness only ensures one of them *actually starts* before relying on it. A
   kernel escape is out of scope.
-- **The escape hatch is real.** `HARNESS_ALLOW_UNISOLATED=1` runs commands
+- **The escape hatch is real.** `RBG_ALLOW_UNISOLATED=1` runs commands
   bare. It exists for development and for CI hosts without unprivileged user
   namespaces; results are flagged unisolated and can never be `verified`.
 - **Learned models are advisory.** Risk, calibration, ranking, impact and

@@ -1,4 +1,4 @@
-# RBG-Harness Hardening & Evaluation — Full Implementation Plan
+# RBG Hardening & Evaluation — Full Implementation Plan
 
 Status: **approved**. Reviewed ground-up via the installed harness MCP
 (`retrieve_context`, `search_code`, `find_symbol`, `plan_audit`).
@@ -8,7 +8,7 @@ Status: **approved**. Reviewed ground-up via the installed harness MCP
 | # | Decision | Consequence |
 |---|---|---|
 | D-Iso | Isolation required; `bwrap` → `nsjail` → **deny** | Unisolated runs never yield `verified` |
-| D-Root | `HARNESS_ALLOWED_ROOTS` allowlist; empty ⇒ every tool errors | Server config must list roots |
+| D-Root | `RBG_ALLOWED_ROOTS` allowlist; empty ⇒ every tool errors | Server config must list roots |
 | D-Scope | A–F in one programme | Real provider + benchmark in scope |
 | D-Disc | Discovery tools return capped snippets **and** a `read_chunk` tool | Agents stop falling back to raw file reads |
 | D-Learned | Learned models shadow-only until the benchmark proves gain | Deterministic policy authoritative |
@@ -20,11 +20,11 @@ Status: **approved**. Reviewed ground-up via the installed harness MCP
 | P0-1 containment helper + 3 prefix-check replacements | **done** | `tests/test_sandbox.py` (7) + full suite 65 pass |
 | P0-2 `Sandbox.run(argv, shell=False)` + all call sites | **done** | full suite 65 pass |
 | P0-3 environment allowlist (replaces secret denylist) | **done** | 4 new tests; full suite 69 pass |
-| P0-4 `harness/isolation.py` (bwrap/nsjail, probe-gated) wired into `Sandbox.run`; results carry `isolation`/`isolated`/`network_disabled` | **done** | 3 new tests; full suite 72 pass |
-| P0-5 `harness/workspace.py` disposable git worktree for the edit/verify loop (fallback in place) | **done** | worktree test; full suite 73 pass |
-| P0-6 MCP root authorization via `HARNESS_ALLOWED_ROOTS`, deny by default | **done** | 4 tests; full suite 77 pass |
-| P0-7 `harness/status.py` evidence-derived `TerminalState`/`derive_status` | **done** | 8 tests; full suite 85 pass |
-| P0-8 `harness/checks.py` language-aware compile/test commands | **done** | 7 tests; full suite 92 pass |
+| P0-4 `rbg/isolation.py` (bwrap/nsjail, probe-gated) wired into `Sandbox.run`; results carry `isolation`/`isolated`/`network_disabled` | **done** | 3 new tests; full suite 72 pass |
+| P0-5 `rbg/workspace.py` disposable git worktree for the edit/verify loop (fallback in place) | **done** | worktree test; full suite 73 pass |
+| P0-6 MCP root authorization via `RBG_ALLOWED_ROOTS`, deny by default | **done** | 4 tests; full suite 77 pass |
+| P0-7 `rbg/status.py` evidence-derived `TerminalState`/`derive_status` | **done** | 8 tests; full suite 85 pass |
+| P0-8 `rbg/checks.py` language-aware compile/test commands | **done** | 7 tests; full suite 92 pass |
 | P0-9 discovery tools return capped snippets + `read_chunk` tool | **done** | new test; full suite 93 pass |
 | P1-1 union diff across repair iterations | **done** | new test; full suite 94 pass |
 | P1-2 content-based revision + cache invalidation (C2/C3, folds in G3) | **done** | 2 tests; full suite 96 pass |
@@ -58,11 +58,11 @@ gated on Phase 2 evidence.
 
 | Block | New file | Surface |
 |---|---|---|
-| Containment | `harness/paths.py` | `resolve_within(root, path) -> str` (realpath + `commonpath`, symlink-escape reject); `ensure_within` for new paths |
-| Execution | `harness/isolation.py` | `detect_backend()`, `wrap(argv, root, network) -> argv`, `IsolationResult(backend, isolated, network_disabled)` |
-| Checks | `harness/checks.py` | `checks_for(paths) -> list[Check]`; per-ext validators (`.py→py_compile`, `.json→json.load`, `.toml→tomllib`, `.yaml→optional`, `.md/.txt→skip`) |
-| Status | `harness/status.py` | `TerminalState` + `derive_status(checks, tests, isolation, policy)` |
-| Fingerprint | `harness/index.py` | `tree_fingerprint(root)` content hash; git tree hash when repo |
+| Containment | `rbg/paths.py` | `resolve_within(root, path) -> str` (realpath + `commonpath`, symlink-escape reject); `ensure_within` for new paths |
+| Execution | `rbg/isolation.py` | `detect_backend()`, `wrap(argv, root, network) -> argv`, `IsolationResult(backend, isolated, network_disabled)` |
+| Checks | `rbg/checks.py` | `checks_for(paths) -> list[Check]`; per-ext validators (`.py→py_compile`, `.json→json.load`, `.toml→tomllib`, `.yaml→optional`, `.md/.txt→skip`) |
+| Status | `rbg/status.py` | `TerminalState` + `derive_status(checks, tests, isolation, policy)` |
+| Fingerprint | `rbg/index.py` | `tree_fingerprint(root)` content hash; git tree hash when repo |
 
 `TerminalState = verified | passed_with_unverified_checks | no_tests_collected |
 failed | needs_human_review`.
@@ -106,11 +106,11 @@ failed | needs_human_review`.
 - **A4** Route `Sandbox.run` through `isolation.wrap`: read-only bind of `root`,
   writable tmpfs scratch, `unshare -n` when `network=False`; record
   `isolated`/`network_disabled` on `CommandResult` and the ledger. No backend ⇒
-  raise `IsolationUnavailable` (deny); `HARNESS_ALLOW_UNISOLATED=1` runs but
+  raise `IsolationUnavailable` (deny); `RBG_ALLOW_UNISOLATED=1` runs but
   forces non-`verified`.
 - **A5** Apply edits in a disposable `git worktree` (fallback temp copy); report
   carries `worktree`; live tree untouched without explicit approval.
-- **A6** `HARNESS_ALLOWED_ROOTS` (path-list) enforced in `_index`/every tool;
+- **A6** `RBG_ALLOWED_ROOTS` (path-list) enforced in `_index`/every tool;
   deny-by-default.
 
 ### B. Verification semantics
@@ -152,7 +152,7 @@ report their true state; discovery tools return readable code under caps.
   console script `rbg`.
 - **E2** `.github/workflows/ci.yml`: pytest + `eval/effectiveness.py` +
   `rbg eval --suite smoke`.
-- **E3** `harness/providers.py`: `OpenAICompatibleLLM(BaseURL, model, key-env)`
+- **E3** `rbg/providers.py`: `OpenAICompatibleLLM(BaseURL, model, key-env)`
   implementing `MainLLM`; `ScriptedLLM` stays demo-only.
 - **E4** `docs/threat-model.md` (assets, trust boundaries, isolation, network,
   roots, residual risk) + `LICENSE`.
@@ -285,7 +285,7 @@ tool surface — there is no "edit the plan file" path — which is what lets th
 same constraints as the rest of the harness apply uniformly:
 
 - **Root authorization** — `root` passes `_authorize_root` (deny by default via
-  `HARNESS_ALLOWED_ROOTS`), exactly like every other tool.
+  `RBG_ALLOWED_ROOTS`), exactly like every other tool.
 - **Containment** — the document is keyed by `(root, task_id)`; it never writes
   outside the store, and never touches the caller's checkout.
 - **Evidence-gated status** — `done` is never a free-text edit; it requires the
@@ -399,7 +399,7 @@ own source of truth.
 | H2 | model-validation gate on complete via MainLLM | plan.py, providers | H1 | — **done**: model-validation gate on complete (verdict required)
 | H3 | plan_create/append/attach/complete/modify/note/check/get tools | mcp_server.py, db.py | H1, H2 | — **done**: plan_create/append/attach/complete/modify/note/check/get/tree/audit tools, persisted per (root, task_id)
 | H4 | plan_audit consumes JSON doc + rollup + back-compat text | plan.py, mcp_server.py | H1 | — **done**: plan_audit consumes stored JSON doc; text path retained
-| H5 | plan editor tests (depth cap, validation gate, rollup) | tests/test_plan_editor.py | H1, H2 | — **done**: tests in test_harness.py (depth cap, gate, rollup, persist)
+| H5 | plan editor tests (depth cap, validation gate, rollup) | tests/test_plan_editor.py | H1, H2 | — **done**: tests in test_rbg.py (depth cap, gate, rollup, persist)
 | H6 | MCP-owned plan: store is source of truth, complete incremental toolset, no file-edit path | mcp_server.py, db.py, plan.py | H3 | — **done**: MCP owns the plan; mutations versioned and ledgered
 
 ## Test plan (new)
@@ -409,7 +409,7 @@ isolation-required), `tests/test_status.py` (all five states incl. no-collector,
 missing-checker, unisolated), `tests/test_loop_cache.py` (union diff,
 content-revision, MCP freshness, unique ids), `tests/test_training_splits.py`
 (no leakage, held-out coverage, shadow gate), `tests/test_mcp_tools.py` (roots
-deny, snippet + `read_chunk` caps). Existing `tests/test_harness.py` extended,
+deny, snippet + `read_chunk` caps). Existing `tests/test_rbg.py` extended,
 not replaced.
 
 ## Rollout / compatibility
@@ -418,8 +418,8 @@ not replaced.
   `Report.to_dict`; ledger `schema_version` bump to 2 with a migration note.
 - `Sandbox.run` signature change is breaking for `run_checks` profile strings;
   update in the same commit.
-- Deny-by-default roots require `HARNESS_ALLOWED_ROOTS` in the opencode MCP
-  config for the installed `rbg-harness` entry, or all tools error — document in
+- Deny-by-default roots require `RBG_ALLOWED_ROOTS` in the opencode MCP
+  config for the installed `rbg` entry, or all tools error — document in
   README quickstart.
 
 ## Risks
@@ -492,11 +492,11 @@ quantity). We already record every run and already have a libSQL vector index.
 
 | Step | Change | File | Status |
 |---|---|---|---|
-| N2-1 | `experiences(id, task_id, repo_id, revision, query, outcome, summary, vector F32_BLOB(512))` + `experiences_idx` (libsql_vector_idx); `save_experience` / `search_experiences` (insert-only, drop-and-recreate discipline like `save_vectors`) | `harness/db.py` | **done** |
-| N2-2 | `experience_encoder()` — an **unfit** `DenseEncoder(512)` (idf defaults to 1.0, so it is deterministic and cross-repo comparable without a per-repo fit) | `harness/retrieval.py` | **done** |
-| N2-3 | `Orchestrator(use_experience=True)`: at intake, retrieve top-1 prior experience and prepend as a synthetic `Hit(reason="experience")`; at run end, write `(task → plan + files_changed + diff summary, outcome)` | `harness/orchestrator.py` | **done** |
+| N2-1 | `experiences(id, task_id, repo_id, revision, query, outcome, summary, vector F32_BLOB(512))` + `experiences_idx` (libsql_vector_idx); `save_experience` / `search_experiences` (insert-only, drop-and-recreate discipline like `save_vectors`) | `rbg/db.py` | **done** |
+| N2-2 | `experience_encoder()` — an **unfit** `DenseEncoder(512)` (idf defaults to 1.0, so it is deterministic and cross-repo comparable without a per-repo fit) | `rbg/retrieval.py` | **done** |
+| N2-3 | `Orchestrator(use_experience=True)`: at intake, retrieve top-1 prior experience and prepend as a synthetic `Hit(reason="experience")`; at run end, write `(task → plan + files_changed + diff summary, outcome)` | `rbg/orchestrator.py` | **done** |
 | N2-4 | A/B knob: `BenchConfig.use_experience` + `full-noexp` config; `ledger_farm --no-experience` (shared root ⇒ real cross-task effect) with `resolution_rate` | `eval/benchmark.py`, `eval/ledger_farm.py` | **done** |
-| N2-5 | Test: encoder unfit+deterministic; nearest-and-cap-at-1; orchestrator injects the prior experience | `tests/test_harness.py` | **done** (3 tests) |
+| N2-5 | Test: encoder unfit+deterministic; nearest-and-cap-at-1; orchestrator injects the prior experience | `tests/test_rbg.py` | **done** (3 tests) |
 
 ### N1 — Patch-correctness / overfitting classifier (zero new deps)
 
@@ -508,25 +508,25 @@ regression label as the supervision proxy and add features the risk head does
 
 | Step | Change | File | Status |
 |---|---|---|---|
-| N1-1 | Label = "task has regression-evidence" from the existing `_regression_outcomes` | `harness/training.py` | **done** |
-| N1-2 | Static patch features: added/removed lines, deleted:added ratio, modifies/creates test files, new-symbol ratio, trivial-change ratio, patch↔context overlap | `harness/models.py` (`patch_features`) | **done** |
-| N1-3 | `PatchCorrectnessModel` (GBDT logloss); `patch_examples`; trained in `train_from_ledger` → `models.metrics["patch"]` | `harness/models.py`, `harness/training.py` | **done** |
-| N1-4 | Ledger component `patch_features` (always logged); orchestrator surfaces `report.patch_risk`, forces full suite + reason code `patch_regression_risk` when high | `harness/orchestrator.py` | **done** |
-| N1-5 | Test: test-editing patch scores higher; `patch_examples` labels a green→red test as 1 | `tests/test_harness.py` | **done** (2 tests) |
+| N1-1 | Label = "task has regression-evidence" from the existing `_regression_outcomes` | `rbg/training.py` | **done** |
+| N1-2 | Static patch features: added/removed lines, deleted:added ratio, modifies/creates test files, new-symbol ratio, trivial-change ratio, patch↔context overlap | `rbg/models.py` (`patch_features`) | **done** |
+| N1-3 | `PatchCorrectnessModel` (GBDT logloss); `patch_examples`; trained in `train_from_ledger` → `models.metrics["patch"]` | `rbg/models.py`, `rbg/training.py` | **done** |
+| N1-4 | Ledger component `patch_features` (always logged); orchestrator surfaces `report.patch_risk`, forces full suite + reason code `patch_regression_risk` when high | `rbg/orchestrator.py` | **done** |
+| N1-5 | Test: test-editing patch scores higher; `patch_examples` labels a green→red test as 1 | `tests/test_rbg.py` | **done** (2 tests) |
 
 ### N4 — Predictive test selection validation (zero new deps)
 
 | Step | Change | File | Status |
 |---|---|---|---|
 | N4-1 | PTS operating point: `recall_at_third` (revealing tests recovered in the top suite-third) + `budget_tests` | `eval/effectiveness.py` | **done** |
-| N4-2 | Test: selector beats alphabetical at the third budget on a fixture | `tests/test_harness.py` | **done** |
+| N4-2 | Test: selector beats alphabetical at the third budget on a fixture | `tests/test_rbg.py` | **done** |
 
 ### N3 — Optional heavier retrievers (optional extra only)
 
 | Step | Change | File | Status |
 |---|---|---|---|
 | N3-1 | `[project.optional-dependencies] semantic = ["transformers", "torch"]` | `pyproject.toml` | **done** |
-| N3-2 | `harness/retrieval_heavy.py`: `CrossEncoderReranker` duck-typing `Reranker.rerank`, graceful linear fallback; `available()` guard. (Encoder slot deferred — larger interface, do it only if the reranker gain proves insufficient.) | `harness/retrieval_heavy.py` | **done** |
+| N3-2 | `rbg/retrieval_heavy.py`: `CrossEncoderReranker` duck-typing `Reranker.rerank`, graceful linear fallback; `available()` guard. (Encoder slot deferred — larger interface, do it only if the reranker gain proves insufficient.) | `rbg/retrieval_heavy.py` | **done** |
 | N3-3 | `--reranker heavy` adds a `hybrid+ce` mode; CI stays numpy-only (absent extra ⇒ fallback) | `eval/retrieval_ablation.py` | **done** |
 
 **Definition of done:** all four land behind their gates; `numpy`+`libsql`-only

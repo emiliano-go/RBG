@@ -64,6 +64,7 @@ class Report:
     drift: list[dict] = field(default_factory=list)
     completeness: dict = field(default_factory=dict)
     patch_risk: float = 0.0
+    patch: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -74,6 +75,7 @@ class Report:
             "context_used": self.context_used, "iterations": self.iterations,
             "actions": self.actions, "plan": self.plan, "drift": self.drift,
             "completeness": self.completeness, "patch_risk": self.patch_risk,
+            "patch": self.patch,
         }
 
 
@@ -279,10 +281,17 @@ class Orchestrator:
         task_id = task_id or f"task-{uuid.uuid4().hex[:12]}"
         workspace = Workspace(self.root)
         work = workspace.setup()
+        report: Report | None = None
         try:
-            return self._run(task, task_id, work)
+            report = self._run(task, task_id, work)
+            return report
         finally:
             workspace.cleanup()
+            if report is not None:
+                report.patch = workspace.patch
+            if work != self.root:
+                self.sandbox = Sandbox(self.root, timeout_s=90)
+                self.verifier = Verifier(self.sandbox)
 
     def _run(self, task: str, task_id: str, work: str) -> Report:
         if work != self.root:
@@ -428,6 +437,7 @@ class Orchestrator:
         selected = [r.test_id for r in ranked] if ranked else None
 
         test_res, outcomes = self.verifier.run_tests(selected)
+        final_outcomes = outcomes
         report.checks_run.append({"name": "tests", **test_res.to_dict(),
                                   "outcomes": [o.__dict__ for o in outcomes]})
         self._log("verifier", {"name": "tests", **test_res.to_dict(),
@@ -450,6 +460,7 @@ class Orchestrator:
             full_res, full_out = self.verifier.run_tests(None)
             report.checks_run.append({"name": "full_suite", **full_res.to_dict()})
             final_res = full_res
+            final_outcomes = full_out
             full_failed = [o for o in full_out if o.status in ("failed", "error")]
             if full_failed:
                 failed = full_failed
@@ -476,12 +487,31 @@ class Orchestrator:
         report.failures = [f"{o.test_id}: {o.status}" for o in failed]
         compile_gate = gate_state(report.checks_run, "compile")
         typecheck_gate = gate_state(report.checks_run, "typecheck")
+        # A zero exit is evidence about a process, not proof that the intended
+        # tests ran.  Verified needs at least one recorded pass and no skips-only
+        # suite; an unparsed/empty run stays unverified.
+        passed = [o for o in final_outcomes if o.status == "passed"]
+        skipped = [o for o in final_outcomes if o.status == "skipped"]
         if final_res.exit_code == 5:
             tests_gate: bool | None = None
             report.scope_reductions.append("no_tests_collected")
             report.unverified.append("tests")
+        elif not final_outcomes:
+            tests_gate = None
+            report.scope_reductions.append("tests_output_unparsed")
+            report.unverified.append("tests")
+        elif failed:
+            tests_gate = False
+        elif not passed and skipped:
+            tests_gate = None
+            report.scope_reductions.append("tests_all_skipped")
+            report.unverified.append("tests")
+        elif not passed:
+            tests_gate = None
+            report.scope_reductions.append("tests_not_run")
+            report.unverified.append("tests")
         else:
-            tests_gate = bool(not failed and (final_res.ok or recovered))
+            tests_gate = bool(final_res.ok or recovered)
         if typecheck_gate is None:
             report.unverified.append("typecheck")
         state = derive_status(Gates(compile=compile_gate, typecheck=typecheck_gate,

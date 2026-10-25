@@ -5,7 +5,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from harness.status import Gates, TerminalState, derive_status, gate_state  # noqa: E402
+from rbg.status import Gates, TerminalState, derive_status, gate_state  # noqa: E402
 
 
 def test_all_required_gates_pass_and_isolated_is_verified():

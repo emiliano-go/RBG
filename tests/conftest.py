@@ -11,9 +11,9 @@ import shutil
 import tempfile
 
 if not (shutil.which("bwrap") or shutil.which("nsjail")):
-    os.environ.setdefault("HARNESS_ALLOW_UNISOLATED", "1")
+    os.environ.setdefault("RBG_ALLOW_UNISOLATED", "1")
 
 # The MCP server denies by default; tests opt in to the temp dir and this repo.
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault(
-    "HARNESS_ALLOWED_ROOTS", os.pathsep.join({tempfile.gettempdir(), _REPO}))
+    "RBG_ALLOWED_ROOTS", os.pathsep.join({tempfile.gettempdir(), _REPO}))

@@ -1,6 +1,6 @@
 import numpy as np
 
-from harness.retrieval_static import StaticCodeEncoder
+from rbg.retrieval_static import StaticCodeEncoder
 
 
 class _Model:
@@ -20,5 +20,5 @@ def test_static_encoder_scores_documents():
 
 def test_missing_model_returns_no_encoder(monkeypatch, tmp_path):
     monkeypatch.setenv("RBG_STATIC_MODEL", str(tmp_path / "missing"))
-    from harness.retrieval_static import encoder
+    from rbg.retrieval_static import encoder
     assert encoder() is None

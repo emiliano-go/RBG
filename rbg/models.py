@@ -623,7 +623,7 @@ def drift_features(section: dict, document: dict, plan_version: int = 1) -> np.n
 class DriftModel:
     """Advisory probability that a section departed from its plan.
 
-    It is intentionally not the gate: the deterministic :mod:`harness.plan_drift`
+    It is intentionally not the gate: the deterministic :mod:`rbg.plan_drift`
     checks block first. The head only ranks sections a human or repair loop
     should look at, and reports its calibrated score separately.
     """

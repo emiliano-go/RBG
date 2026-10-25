@@ -1,6 +1,6 @@
 """Credential-shaped files never enter the retrieval index."""
 
-from harness.index import RepoIndex
+from rbg.index import RepoIndex
 
 
 def test_secret_files_are_not_indexed(tmp_path):
@@ -16,7 +16,7 @@ def test_secret_files_are_not_indexed(tmp_path):
 
 
 def test_override_allows_sensitive(tmp_path, monkeypatch):
-    monkeypatch.setenv("HARNESS_ALLOW_SENSITIVE", "1")
+    monkeypatch.setenv("RBG_ALLOW_SENSITIVE", "1")
     (tmp_path / "credentials.json").write_text("{\"k\": 1}\n")
     idx = RepoIndex.build(str(tmp_path))
     assert "credentials.json" in idx.files

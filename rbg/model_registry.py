@@ -17,21 +17,21 @@ from pathlib import Path
 SPECS: dict[str, dict] = {
     "potion-code": {
         "repo": "minishlab/potion-code-16M-v2",
-        "revision": "main",
+        "revision": "e9d2a44ca6a05ac6685f3b23709ea57eb7352d5b",
         "kind": "static",
         "dim": 256,
         "note": "16M static code encoder, CPU-only, distilled from CodeRankEmbed",
     },
     "code-rank": {
         "repo": "nomic-ai/CodeRankEmbed",
-        "revision": "main",
+        "revision": "3c4b60807d71f79b43f3c4363786d9493691f8b1",
         "kind": "sentence-transformer",
         "dim": 768,
         "note": "137M code bi-encoder, 8192 context; needs the semantic extra",
     },
     "gte-reranker": {
         "repo": "Alibaba-NLP/gte-reranker-modernbert-base",
-        "revision": "main",
+        "revision": "f7481e6055501a30fb19d090657df9ec1f79ab2c",
         "kind": "cross-encoder",
         "dim": 0,
         "note": "149M code reranker, 8192 context; needs the semantic extra",
@@ -43,7 +43,7 @@ _ENV_DIR = "RBG_MODEL_DIR"
 
 def cache_root() -> Path:
     return Path(os.environ.get(_ENV_DIR) or
-                (Path(os.path.expanduser("~")) / ".local" / "share" / "harness" / "models"))
+                (Path(os.path.expanduser("~")) / ".local" / "share" / "rbg" / "models"))
 
 
 def model_dir(name: str) -> Path:
@@ -65,7 +65,7 @@ def _manifest(path: Path) -> dict:
         if file.is_file() and file.name != ".rbg-manifest.json":
             files[str(file.relative_to(path))] = hashlib.sha256(
                 file.read_bytes()).hexdigest()
-    return {"files": files}
+    return {"version": 1, "files": files}
 
 
 def pull(name: str, revision: str | None = None) -> str:
@@ -76,12 +76,16 @@ def pull(name: str, revision: str | None = None) -> str:
         from huggingface_hub import snapshot_download
     except ImportError as exc:
         raise RuntimeError("install huggingface-hub to pull models") from exc
+    if revision and revision != spec["revision"]:
+        raise ValueError(f"{name} is pinned to {spec['revision']}; refusing {revision}")
     dest = model_dir(name)
     dest.mkdir(parents=True, exist_ok=True)
-    snapshot_download(repo_id=spec["repo"], revision=revision or spec["revision"],
+    snapshot_download(repo_id=spec["repo"], revision=spec["revision"],
                       local_dir=str(dest))
+    manifest = _manifest(dest)
+    manifest.update({"repo": spec["repo"], "revision": spec["revision"]})
     (dest / ".rbg-manifest.json").write_text(
-        json.dumps(_manifest(dest), indent=2, sort_keys=True) + "\n")
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     return str(dest)
 
 
@@ -90,13 +94,19 @@ def verify(name: str) -> dict:
     manifest = path / ".rbg-manifest.json"
     if not manifest.exists():
         return {"model": name, "ok": False, "reason": "not pulled"}
-    expected = json.loads(manifest.read_text()).get("files", {})
+    doc = json.loads(manifest.read_text())
+    spec = SPECS[name]
+    if doc.get("repo") != spec["repo"] or doc.get("revision") != spec["revision"]:
+        return {"model": name, "ok": False, "reason": "manifest does not match pinned spec",
+                "path": str(path)}
+    expected = doc.get("files", {})
     actual = _manifest(path)["files"]
     bad = [f for f in expected if expected[f] != actual.get(f)]
     missing = [f for f in expected if f not in actual]
-    return {"model": name, "ok": not bad and not missing,
+    unexpected = [f for f in actual if f not in expected]
+    return {"model": name, "ok": not (bad or missing or unexpected),
             "bad": bad[:20], "missing": missing[:20],
-            "path": str(path)}
+            "unexpected": unexpected[:20], "path": str(path)}
 
 
 def list_models() -> list[dict]:

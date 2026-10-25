@@ -5,7 +5,7 @@ Each backend is probed once with a command that asserts the boundary (writes
 outside the worktree fail, host home is hidden, the network namespace is empty,
 and the PID namespace is new); a backend that cannot prove those properties is
 treated as unavailable.  When no backend works, :func:`select` raises unless
-``HARNESS_ALLOW_UNISOLATED=1`` is set, in which case the command runs bare and
+``RBG_ALLOW_UNISOLATED=1`` is set, in which case the command runs bare and
 the result is marked unisolated so it can never count as verified.
 """
 
@@ -16,6 +16,8 @@ import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
+
+WORKSPACE = "/tmp/workspace"  # /tmp is a writable tmpfs, so the mountpoint exists
 
 _BACKENDS = ("bwrap", "nsjail")
 _probe_cache: dict[str, bool] = {}
@@ -31,6 +33,7 @@ class Isolation:
     isolated: bool
     network_disabled: bool
     prefix: tuple[str, ...] = field(default_factory=tuple)
+    workspace: str = WORKSPACE
 
 
 def _truthy(name: str) -> bool:
@@ -42,8 +45,14 @@ def _under(path: str, parent: str) -> bool:
     return path == parent or path.startswith(parent.rstrip(os.sep) + os.sep)
 
 
-def _wrap(backend: str, cwd: str, network: bool, root: str | None = None) -> list[str]:
-    root = os.path.realpath(root or cwd)
+# Every command sees the candidate repository at this fixed path (under the
+# writable /tmp tmpfs, since bwrap cannot create a mountpoint at /).  Host home
+# directories are hidden unconditionally, so a repo under /home cannot expose
+# the rest of /home through read-only access.
+
+
+def _wrap(backend: str, network: bool, root: str) -> list[str]:
+    root = os.path.realpath(root)
     if backend == "bwrap":
         argv = [
             shutil.which("bwrap") or "bwrap",
@@ -52,18 +61,14 @@ def _wrap(backend: str, cwd: str, network: bool, root: str | None = None) -> lis
             "--proc", "/proc",
             "--size", "268435456", "--tmpfs", "/tmp",
             "--tmpfs", "/root",
+            "--tmpfs", "/home",
             "--ro-bind-try", "/etc", "/etc",
             "--die-with-parent",
             "--new-session",
             "--cap-drop", "ALL",
-            "--chdir", cwd,
         ]
-        # Hide user homes unless the worktree lives there (the bind below would
-        # otherwise be hidden by the tmpfs).  The worktree itself is the only
-        # writable host path the command sees.
-        if not _under(root, "/home"):
-            argv += ["--tmpfs", "/home"]
-        argv += ["--bind", root, root]
+        # The candidate repo is the only writable host path inside the sandbox.
+        argv += ["--bind", root, WORKSPACE]
         argv += ["--unshare-all"]
         if network:
             argv.append("--share-net")
@@ -71,12 +76,13 @@ def _wrap(backend: str, cwd: str, network: bool, root: str | None = None) -> lis
     # nsjail: recipe is probed before use, so a wrong flag set fails closed.
     argv = [
         shutil.which("nsjail") or "nsjail",
-        "--quiet", "--mode", "o", "--chroot", "/", "--cwd", cwd,
+        "--quiet", "--mode", "o", "--chroot", "/",
         "--bindmount_ro", "/:/", "--tmpfs", "/tmp",
+        "--tmpfs", "/root", "--tmpfs", "/home",
         "--rlimit_as", "4096", "--rlimit_cpu", "60", "--rlimit_nproc", "512",
         "--rlimit_fsize", "64", "--rlimit_nofile", "512",
         "--time_limit", "60",
-        "--bindmount", f"{root}:{root}",
+        "--bindmount", f"{root}:{WORKSPACE}",
     ]
     if not network:
         argv.append("--disable_clone_newnet")
@@ -111,7 +117,7 @@ def _probe(backend: str) -> bool:
     root = tempfile.mkdtemp(prefix="rbg-probe-")
     try:
         host_pidns = os.stat("/proc/self/ns/pid").st_ino
-        argv = [*_wrap(backend, root, network=False, root=root),
+        argv = [*_wrap(backend, network=False, root=root),
                 shutil.which("sh") or "/bin/sh", "-c", _PROBE, "rbg-probe",
                 str(host_pidns)]
         ok = subprocess.run(argv, capture_output=True, timeout=15,
@@ -137,9 +143,9 @@ def select(network: bool, root: str | None = None) -> Isolation:
     workdir = os.path.realpath(root or os.getcwd())
     if backend:
         return Isolation(backend, True, not network,
-                         tuple(_wrap(backend, workdir, network, workdir)))
-    if _truthy("HARNESS_ALLOW_UNISOLATED"):
+                         tuple(_wrap(backend, network, workdir)))
+    if _truthy("RBG_ALLOW_UNISOLATED"):
         return Isolation("none", False, False, ())
     raise IsolationUnavailable(
         "no usable isolation backend (tried bwrap, nsjail); refusing to run. "
-        "Set HARNESS_ALLOW_UNISOLATED=1 for development only.")
+        "Set RBG_ALLOW_UNISOLATED=1 for development only.")

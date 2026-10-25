@@ -5,7 +5,7 @@ import pickle
 import numpy as np
 import pytest
 
-from harness import persist
+from rbg import persist
 
 
 def test_roundtrip_and_digest():
@@ -40,7 +40,7 @@ def test_forbidden_class_never_executes(tmp_path):
 
 
 def test_db_refuses_legacy_artifact(tmp_path):
-    from harness.db import Store
+    from rbg.db import Store
 
     store = Store(str(tmp_path))
     store.conn.execute(

@@ -39,7 +39,7 @@ _SENSITIVE_SUFFIXES = (".pem", ".key", ".p12", ".pfx", ".keystore", ".jks")
 
 
 def _sensitive(rel: str) -> bool:
-    if os.environ.get("HARNESS_ALLOW_SENSITIVE", "").lower() in ("1", "true", "yes"):
+    if os.environ.get("RBG_ALLOW_SENSITIVE", "").lower() in ("1", "true", "yes"):
         return False
     name = os.path.basename(rel).lower()
     return (name in _SENSITIVE_NAMES
@@ -48,14 +48,14 @@ def _sensitive(rel: str) -> bool:
 
 
 def _extra_skip_dirs() -> frozenset[str]:
-    """Operator-supplied directory names to prune (``HARNESS_EXTRA_SKIP_DIRS``).
+    """Operator-supplied directory names to prune (``RBG_EXTRA_SKIP_DIRS``).
 
     A monorepo root often mixes source with generated campaign/site artefacts;
     this lets a deployment exclude those without hard-coding repo-specific
     names in the indexer.
     """
     global _EXTRA_SKIP_CACHE
-    raw = os.environ.get("HARNESS_EXTRA_SKIP_DIRS", "")
+    raw = os.environ.get("RBG_EXTRA_SKIP_DIRS", "")
     if _EXTRA_SKIP_CACHE[0] != raw:
         names = frozenset(p.strip().strip("/") for p in raw.split(",") if p.strip())
         _EXTRA_SKIP_CACHE = (raw, names)

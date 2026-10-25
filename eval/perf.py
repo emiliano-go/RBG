@@ -20,15 +20,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np  # noqa: E402
 
-from harness.index import RepoIndex  # noqa: E402
-from harness.models import (  # noqa: E402
+from rbg.index import RepoIndex  # noqa: E402
+from rbg.models import (  # noqa: E402
     ChangeImpactModel, ConformalCalibrator, FlakyModel, GBDT, PlattScaler,
     Policy, TestSelector,
 )
-from harness.retrieval import (  # noqa: E402
+from rbg.retrieval import (  # noqa: E402
     BM25, DenseEncoder, HybridRetriever, LSIEncoder, Reranker, tokenize,
 )
-from harness import mcp_server  # noqa: E402
+from rbg import mcp_server  # noqa: E402
 
 
 def _bench(fn, repeat: int) -> dict:
@@ -87,7 +87,7 @@ def bench_models(index: RepoIndex, repeat: int) -> dict:
                                         loss="logloss").fit(X[:320], y[:320]), repeat),
         "GBDT.predict": _bench(lambda: gbdt.predict(X), repeat),
         "Policy.decide": _bench(lambda: policy.decide(
-            __import__("harness.models", fromlist=["extract_features"]).extract_features(query)),
+            __import__("rbg.models", fromlist=["extract_features"]).extract_features(query)),
             repeat),
         "PlattScaler.fit": _bench(lambda: PlattScaler().fit(P, y[:320]), repeat),
         "Platt.__call__": _bench(lambda: [platt(float(r)) for r in P], repeat),
@@ -175,10 +175,10 @@ def main() -> int:
     ap.add_argument("--out", default="")
     args = ap.parse_args()
     root = os.path.abspath(args.repo)
-    # The MCP tools deny-by-default (HARNESS_ALLOWED_ROOTS); without this the
+    # The MCP tools deny-by-default (RBG_ALLOWED_ROOTS); without this the
     # timed calls all return instant permission errors and every "latency"
     # reads as a suspicious 0.02 ms.  Authorize just the repo under test.
-    os.environ.setdefault("HARNESS_ALLOWED_ROOTS", root)
+    os.environ.setdefault("RBG_ALLOWED_ROOTS", root)
     idx = RepoIndex.build(root)
     mcp_server._INDEX_CACHE.clear()
     mcp_server._STORE_CACHE.clear()

@@ -45,6 +45,7 @@ class OpenAICompatLLM:
         # (the old default) timed a live run out.  RBG_LLM_TIMEOUT overrides.
         self.timeout_s = (timeout_s if timeout_s is not None
                           else float(os.environ.get("RBG_LLM_TIMEOUT", "120")))
+        self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
     def _chat(self, system: str, user: str) -> str:
         payload = {
@@ -71,6 +72,8 @@ class OpenAICompatLLM:
             try:
                 with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
                     data = json.loads(resp.read())
+                for key in self.usage:
+                    self.usage[key] += int((data.get("usage") or {}).get(key) or 0)
                 return data["choices"][0]["message"]["content"]
             except urllib.error.HTTPError as exc:
                 last = exc

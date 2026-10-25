@@ -1,7 +1,7 @@
 import numpy as np
 
-from harness.drift import conformal_martingale
-from harness.models import ConformalCalibrator
+from rbg.drift import conformal_martingale
+from rbg.models import ConformalCalibrator
 
 
 def test_conformal_stores_calibration_scores():

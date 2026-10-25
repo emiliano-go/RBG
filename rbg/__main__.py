@@ -1,9 +1,9 @@
 """Command-line entry point and an end-to-end demo.
 
-``python -m harness retrieve <root> <query>``  - hybrid retrieval
-``python -m harness index <root>``            - repository index summary
-``python -m harness models``                  - train the GBDT on a toy task
-``python -m harness demo``                    - full state-machine run
+``python -m rbg retrieve <root> <query>``  - hybrid retrieval
+``python -m rbg index <root>``            - repository index summary
+``python -m rbg models``                  - train the GBDT on a toy task
+``python -m rbg demo``                    - full state-machine run
 """
 
 from __future__ import annotations
@@ -109,7 +109,7 @@ def cmd_models() -> None:
 
 
 def cmd_demo() -> int:
-    root = tempfile.mkdtemp(prefix="harness-demo-")
+    root = tempfile.mkdtemp(prefix="rbg-demo-")
     _make_demo_repo(root)
     print(f"demo repo: {root}")
 
@@ -200,7 +200,7 @@ def main(argv: list[str] | None = None) -> int:
     if argv and argv[0] in ("eval", "compare"):
         from eval.benchmark import main as bench_main
         return bench_main(argv)
-    ap = argparse.ArgumentParser(prog="harness")
+    ap = argparse.ArgumentParser(prog="rbg")
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name in ("index", "retrieve"):
         p = sub.add_parser(name)
