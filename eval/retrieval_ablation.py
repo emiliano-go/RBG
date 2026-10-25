@@ -18,10 +18,9 @@ import tempfile
 
 import numpy as np
 
+from eval.benchmark import _mean, load_suite
 from rbg.index import RepoIndex
 from rbg.retrieval import HybridRetriever
-
-from eval.benchmark import _mean, load_suite
 
 MODES = ("lexical", "dense", "hybrid")
 

@@ -19,13 +19,25 @@ from typing import Protocol
 
 from . import db
 from .index import RepoIndex
-from .models import (Policy, TestSelector, TaskFeatures, extract_features,
-                     patch_features, select_action)
+from .models import (
+    Policy,
+    TaskFeatures,
+    TestSelector,
+    extract_features,
+    patch_features,
+    select_action,
+)
 from .paths import resolve_within
 from .plan import Plan, audit_completion, format_guidance, parse_plan, scope_drift
-from .retrieval import EXPERIENCE_DIM, HybridRetriever, Hit, Reranker, experience_encoder
+from .retrieval import (
+    EXPERIENCE_DIM,
+    Hit,
+    HybridRetriever,
+    Reranker,
+    experience_encoder,
+)
 from .status import Gates, TerminalState, derive_status, gate_state
-from .training import LearnedModels, test_histories
+from .training import LearnedModels, test_durations, test_histories
 from .verify import Ledger, Sandbox, TestOutcome, Verifier
 from .workspace import Workspace
 
@@ -65,6 +77,7 @@ class Report:
     completeness: dict = field(default_factory=dict)
     patch_risk: float = 0.0
     patch: str = ""
+    faults: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -75,7 +88,7 @@ class Report:
             "context_used": self.context_used, "iterations": self.iterations,
             "actions": self.actions, "plan": self.plan, "drift": self.drift,
             "completeness": self.completeness, "patch_risk": self.patch_risk,
-            "patch": self.patch,
+            "patch": self.patch, "faults": self.faults,
         }
 
 
@@ -105,7 +118,9 @@ class Orchestrator:
         self.retriever: HybridRetriever | None = None
         self.repo_id = hashlib.sha256(self.root.encode()).hexdigest()[:12]
         self.ledger = Ledger(db.Store(self.root))
-        self._history = test_histories(self.ledger.store.read_ledger())
+        ledger_entries = self.ledger.store.read_ledger()
+        self._history = test_histories(ledger_entries)
+        self._durations = test_durations(ledger_entries)
 
     def _retriever(self) -> HybridRetriever:
         reranker = self.learned.reranker if self.learned else None
@@ -190,7 +205,9 @@ class Orchestrator:
         for line in res.stdout.splitlines():
             line = line.strip()
             if "::" in line and not line.startswith("<"):
-                tests.append({"test_id": line, "duration": 1.0, "history": []})
+                tests.append({"test_id": line,
+                              "duration": self._durations.get(line, 1.0),
+                              "history": self._history.get(line, [])})
         if not tests:
             for path in self.index.files:
                 if re.search(r"test_.*\.py$|_test\.py$", path):
@@ -444,12 +461,32 @@ class Orchestrator:
                                "outcomes": [o.__dict__ for o in outcomes]},
                   model_name="pytest", task_id=task_id, latency_ms=test_res.duration_ms)
 
+        for o in outcomes:
+            if o.duration_s > 0:
+                self._durations[o.test_id] = o.duration_s
         failed = [o for o in outcomes if o.status in ("failed", "error")]
         final_res = test_res
         if failed and any(self.selector.flaky.predict(self._history.get(o.test_id, [])) > 0.0
                           for o in failed):
             report.actions.append("rerun_flaky_failure")
         failed = self._rerun_flaky_failures(failed, outcomes, report, task_id)
+
+        # 9a. execution-based fault localization on the observed failures.
+        # Opt-in because it reruns the suite under a line tracer; the result is
+        # evidence for retrieval/test selection, never a status override.
+        if failed and os.environ.get("RBG_FAULT_LOCALIZATION", "").lower() in ("1", "true", "yes"):
+            try:
+                from .fault_localization import collect, rank_lines, symbol_ranking
+                ids = [o.test_id for o in final_outcomes]
+                coverage = collect(work, self.sandbox, ids)
+                lines = rank_lines(coverage, [o.test_id for o in failed])
+                report.faults = symbol_ranking(lines, self.index)
+                self._log("fault_localization", {"suspects": report.faults,
+                                                 "n_tests": len(ids)},
+                          model_name="ochiai-v1", task_id=task_id)
+            except Exception as exc:  # evidence is advisory; never fail the run
+                self._log("fault_localization", {"error": type(exc).__name__},
+                          model_name="ochiai-v1", task_id=task_id)
 
         # 9b. choose the next step from the bounded action menu (spec 5.3)
         action, action_reasons = select_action(

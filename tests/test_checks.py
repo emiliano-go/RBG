@@ -6,7 +6,11 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from rbg.checks import (  # noqa: E402
-    Toolchain, binary_available, compile_command, detect, runner_argv,
+    Toolchain,
+    binary_available,
+    compile_command,
+    detect,
+    runner_argv,
 )
 
 
@@ -42,7 +46,7 @@ def test_python_commands_use_paths_and_selection():
         ["python3", "-m", "py_compile", "a.py", "b.py"]
     assert compile_command(tc, "python3", []) == ["python3", "-m", "compileall", "-q", "."]
     assert runner_argv(tc, "python3", ["t::x"]) == \
-        ["python3", "-m", "pytest", "t::x", "-q", "-rA", "--no-header"]
+        ["python3", "-m", "pytest", "t::x", "-q", "-rA", "--no-header", "--durations=0"]
 
 
 def test_non_python_commands_ignore_paths():

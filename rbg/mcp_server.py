@@ -17,24 +17,66 @@ import threading
 import time
 import traceback
 
+from .mcp_plan import (  # noqa: F401 - re-exported plan API
+    plan_append,
+    plan_attach,
+    plan_audit,
+    plan_check,
+    plan_complete,
+    plan_create,
+    plan_get,
+    plan_modify,
+    plan_note,
+    plan_tree,
+)
+from .mcp_schemas import (
+    MAX_LINE_BYTES,
+    MAX_OUTPUT_BYTES,
+    PROMPTS,
+    RESOURCE_TEMPLATES,
+    TOOLS,
+    _read_resource,
+)
 from .mcp_service import (  # noqa: F401 - re-exported service API
-    IndexBuilding, _BUILD_LOCK, _BUILD_STATE, _FAST_RETRIEVER_CACHE, _INDEX_CACHE,
-    _INDEX_SIGNATURE, _LEARNED_CACHE, _PLAN_DRIFT_LOGGED, _PLAN_DRIFT_LOGGED_MAX,
-    _RESULT_CACHE, _RESULT_CACHE_MAX, _RETRIEVER_BUILD, _RETRIEVER_BUILD_LOCK,
-    _RETRIEVER_CACHE, _STORE_CACHE, _TOKENS_CACHE, _authorize_root, _index,
-    _learned, _retriever, _store,
+    _BUILD_LOCK,
+    _BUILD_STATE,
+    _FAST_RETRIEVER_CACHE,
+    _INDEX_CACHE,
+    _INDEX_SIGNATURE,
+    _LEARNED_CACHE,
+    _PLAN_DRIFT_LOGGED,
+    _PLAN_DRIFT_LOGGED_MAX,
+    _RESULT_CACHE,
+    _RESULT_CACHE_MAX,
+    _RETRIEVER_BUILD,
+    _RETRIEVER_BUILD_LOCK,
+    _RETRIEVER_CACHE,
+    _STORE_CACHE,
+    _TOKENS_CACHE,
+    IndexBuilding,
+    _authorize_root,
+    _index,
+    _learned,
+    _retriever,
+    _store,
 )
 from .mcp_tools import (  # noqa: F401 - re-exported tool API
-    check_drift, db_stats, find_symbol, get_calibration, get_change_impact,
-    get_diagnostics, get_task_status, propose_patch, rank_tests, read_chunk,
-    retrieve_context, run_checks, search_code, train_models, vector_search,
+    check_drift,
+    db_stats,
+    find_symbol,
+    get_calibration,
+    get_change_impact,
+    get_diagnostics,
+    get_task_status,
+    propose_patch,
+    rank_tests,
+    read_chunk,
+    retrieve_context,
+    run_checks,
+    search_code,
+    train_models,
+    vector_search,
 )
-from .mcp_plan import (  # noqa: F401 - re-exported plan API
-    plan_append, plan_attach, plan_audit, plan_check, plan_complete, plan_create,
-    plan_get, plan_modify, plan_note, plan_tree,
-)
-from .mcp_schemas import (MAX_LINE_BYTES, MAX_OUTPUT_BYTES, PROMPTS,
-                          RESOURCE_TEMPLATES, TOOLS, _read_resource)
 
 SERVER_NAME = "rbg-mcp"
 SERVER_VERSION = "0.2.0"

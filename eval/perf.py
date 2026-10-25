@@ -20,15 +20,25 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np  # noqa: E402
 
+from rbg import mcp_server  # noqa: E402
 from rbg.index import RepoIndex  # noqa: E402
 from rbg.models import (  # noqa: E402
-    ChangeImpactModel, ConformalCalibrator, FlakyModel, GBDT, PlattScaler,
-    Policy, TestSelector,
+    GBDT,
+    ChangeImpactModel,
+    ConformalCalibrator,
+    FlakyModel,
+    PlattScaler,
+    Policy,
+    TestSelector,
 )
 from rbg.retrieval import (  # noqa: E402
-    BM25, DenseEncoder, HybridRetriever, LSIEncoder, Reranker, tokenize,
+    BM25,
+    DenseEncoder,
+    HybridRetriever,
+    LSIEncoder,
+    Reranker,
+    tokenize,
 )
-from rbg import mcp_server  # noqa: E402
 
 
 def _bench(fn, repeat: int) -> dict:

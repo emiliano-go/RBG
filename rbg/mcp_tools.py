@@ -8,15 +8,25 @@ import time
 
 from .checks import compile_command, detect, runner_argv
 from .index import chunk_key
+from .mcp_service import (
+    _LEARNED_CACHE,
+    _RETRIEVER_CACHE,
+    _build_retriever,
+    _chunk_tokens,
+    _index,
+    _index_fresh,
+    _learned,
+    _read_budget,
+    _result_cached,
+    _retriever,
+    _store,
+    _timings,
+)
 from .models import TestSelector
 from .paths import resolve_within
 from .training import PROMOTION_KEY, read_ledger, validate_and_promote
 from .verify import Sandbox
-from .mcp_service import (
-    _LEARNED_CACHE, _RETRIEVER_CACHE, _build_retriever, _chunk_tokens, _index,
-    _index_fresh, _learned, _read_budget, _result_cached, _retriever, _store,
-    _timings,
-)
+
 
 # --------------------------------------------------------------------------- #
 # Tool handlers.  Each returns a JSON-serialisable dict.

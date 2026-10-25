@@ -2,8 +2,8 @@
 
 import os
 import subprocess
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -53,6 +53,7 @@ def test_git_worktree_sees_uncommitted_and_untracked_start_state(tmp_path):
 
 def test_failed_worktree_does_not_fall_back_to_the_checkout(monkeypatch, tmp_path):
     import subprocess
+
     from rbg import workspace
 
     root = tmp_path / "repo"

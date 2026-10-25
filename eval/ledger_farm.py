@@ -24,8 +24,14 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from eval.benchmark import (CONFIGS, BlindLLM, ChaosLLM, OracleLLM,  # noqa: E402
-                            _write_repo, load_suite)
+from eval.benchmark import (  # noqa: E402
+    CONFIGS,
+    BlindLLM,
+    ChaosLLM,
+    OracleLLM,
+    _write_repo,
+    load_suite,
+)
 from rbg.orchestrator import Orchestrator  # noqa: E402
 from rbg.training import train_from_ledger, validate_and_promote  # noqa: E402
 

@@ -51,7 +51,14 @@ def _under(path: str, parent: str) -> bool:
 # the rest of /home through read-only access.
 
 
-def _wrap(backend: str, network: bool, root: str) -> list[str]:
+# Host data directories that are not needed to run code.  A read-only bind of
+# ``/`` still exposes their contents, and command output can carry it back to the
+# model, so mask them before adding the workspace and explicit dependencies.
+_HOST_MASK = ("/var", "/mnt", "/media", "/srv", "/boot")
+
+
+def _wrap(backend: str, network: bool, root: str,
+          ro_binds: tuple[tuple[str, str], ...] = ()) -> list[str]:
     root = os.path.realpath(root)
     if backend == "bwrap":
         argv = [
@@ -67,7 +74,13 @@ def _wrap(backend: str, network: bool, root: str) -> list[str]:
             "--new-session",
             "--cap-drop", "ALL",
         ]
-        # The candidate repo is the only writable host path inside the sandbox.
+        for path in _HOST_MASK:
+            if os.path.exists(path):
+                argv += ["--tmpfs", path]
+        # The candidate repo is the only writable host path inside the sandbox;
+        # a project venv is mounted read-only at a stable sandbox path.
+        for src, dst in ro_binds:
+            argv += ["--ro-bind", src, dst]
         argv += ["--bind", root, WORKSPACE]
         argv += ["--unshare-all"]
         if network:
@@ -84,6 +97,11 @@ def _wrap(backend: str, network: bool, root: str) -> list[str]:
         "--time_limit", "60",
         "--bindmount", f"{root}:{WORKSPACE}",
     ]
+    for path in _HOST_MASK:
+        if os.path.exists(path):
+            argv += ["--tmpfs", path]
+    for src, dst in ro_binds:
+        argv += ["--bindmount_ro", f"{src}:{dst}"]
     if not network:
         argv.append("--disable_clone_newnet")
     return [*argv, "--"]
@@ -138,12 +156,13 @@ def available_backend() -> str | None:
     return None
 
 
-def select(network: bool, root: str | None = None) -> Isolation:
+def select(network: bool, root: str | None = None,
+           ro_binds: tuple[tuple[str, str], ...] = ()) -> Isolation:
     backend = available_backend()
     workdir = os.path.realpath(root or os.getcwd())
     if backend:
         return Isolation(backend, True, not network,
-                         tuple(_wrap(backend, network, workdir)))
+                         tuple(_wrap(backend, network, workdir, ro_binds)))
     if _truthy("RBG_ALLOW_UNISOLATED"):
         return Isolation("none", False, False, ())
     raise IsolationUnavailable(

@@ -17,11 +17,17 @@ try:
 except ImportError:  # pragma: no cover - non-POSIX; DB busy-timeout still guards writes
     fcntl = None
 
-from . import db
+from . import db, retrieval
 from .index import RepoIndex, _tree_hash, _tree_signature
-from . import retrieval
-from .retrieval import (DenseEncoder, FTSBackend, HybridRetriever, LSIEncoder,
-                        LexicalOnlyEncoder, heavy_encoder, tokenize)
+from .retrieval import (
+    DenseEncoder,
+    FTSBackend,
+    HybridRetriever,
+    LexicalOnlyEncoder,
+    LSIEncoder,
+    heavy_encoder,
+    tokenize,
+)
 from .training import PROMOTION_KEY, LearnedModels, train_from_ledger
 
 SERVER_NAME = "rbg-mcp"

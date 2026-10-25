@@ -67,7 +67,7 @@ def compile_command(toolchain: Toolchain, python: str, paths: list[str] | None) 
 
 def runner_argv(toolchain: Toolchain, python: str, selected: list[str] | None) -> list[str]:
     if toolchain.is_python:
-        return [python, "-m", "pytest", *(selected or []), "-q", "-rA", "--no-header"]
+        return [python, "-m", "pytest", *(selected or []), "-q", "-rA", "--no-header", "--durations=0"]
     return list(toolchain.test)
 
 

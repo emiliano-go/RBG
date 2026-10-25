@@ -20,9 +20,18 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from .index import RepoIndex
-from .models import (DRIFT_FEATURE_NAMES, FEATURE_NAMES, ChangeImpactModel,
-                     ConformalCalibrator, DriftModel, PatchCorrectnessModel,
-                     PlattScaler, Policy, TestSelector, drift_features)
+from .models import (
+    DRIFT_FEATURE_NAMES,
+    FEATURE_NAMES,
+    ChangeImpactModel,
+    ConformalCalibrator,
+    DriftModel,
+    PatchCorrectnessModel,
+    PlattScaler,
+    Policy,
+    TestSelector,
+    drift_features,
+)
 from .retrieval import Reranker, tokenize
 
 # Enough local rows to trust a repo-specific fit; below this the pooled tier
@@ -116,6 +125,19 @@ def test_histories(entries: list[dict]) -> dict[str, list[bool]]:
     return hist
 
 
+def test_durations(entries: list[dict]) -> dict[str, float]:
+    """Latest recorded duration per test id (1.0 when the runner did not report)."""
+    out: dict[str, float] = {}
+    for e in entries:
+        if e.get("component") != "verifier":
+            continue
+        for o in e.get("result", {}).get("outcomes", []):
+            tid, dur = o.get("test_id"), o.get("duration_s")
+            if tid and isinstance(dur, (int, float)) and dur > 0:
+                out[tid] = float(dur)
+    return out
+
+
 def _regression_outcomes(entries: list[dict]):
     """Per task, label each test outcome as regression evidence.
 
@@ -145,7 +167,10 @@ def _regression_outcomes(entries: list[dict]):
         for o in e.get("result", {}).get("outcomes", []):
             path = o.get("test_id", "")
             passed = o.get("status") == "passed"
-            label = 1 if (not passed and not failed.get(path, False)) else 0
+            # A first-ever failure has no pre-patch observation: it is
+            # inconclusive, not evidence of a new regression.
+            known_before = path in hist
+            label = 1 if (not passed and known_before and not failed.get(path, False)) else 0
             items.append((path, label, passed, o.get("duration_s", 1.0) or 1.0))
         by_task[tid] = items
         for path, _label, passed, _dur in items:
@@ -280,29 +305,49 @@ def _fit_risk(X, y, store, repo_id: str):
     prior_ok = len(prior_y) >= MIN_FIT and len(set(prior_y.tolist())) > 1
     info["n_prior"] = int(len(prior_y))
 
+    # Champion/challenger validation is genuinely out of sample: carve the
+    # final slice off before fitting either candidate, then refit the winner on
+    # all rows (including the validation slice) for the deployed model.
+    gate_ok = n >= MIN_LOCAL
+    if gate_ok:
+        cut = max(MIN_FIT, int(n * 0.8))
+        fitX, fitY = X[:cut], y[:cut]
+        hX, hy = X[cut:], y[cut:]
+        gate_ok = (len(hy) >= 3 and len(set(hy.tolist())) > 1
+                   and len(set(fitY.tolist())) > 1)
+    else:
+        fitX, fitY, hX, hy = X, y, X[:0], y[:0]
+
+    def fit_candidate(name: str, train_x, train_y):
+        if name == "local":
+            return Policy().train_risk(train_x.tolist(), train_y.tolist()).risk_model
+        augX = np.vstack([train_x, prior_X])
+        augY = np.concatenate([train_y, prior_y])
+        return Policy().train_risk(augX.tolist(), augY.tolist()).risk_model
+
     candidates: list[tuple[str, object]] = []
     if local_ok:
-        candidates.append(("local", Policy().train_risk(X.tolist(), y.tolist()).risk_model))
+        candidates.append(("local", fit_candidate("local", fitX, fitY)))
     if local_ok and prior_ok:
-        augX = np.vstack([X, prior_X])
-        augY = np.concatenate([y, prior_y])
-        candidates.append(("pooled", Policy().train_risk(augX.tolist(), augY.tolist()).risk_model))
+        candidates.append(("pooled", fit_candidate("pooled", fitX, fitY)))
     elif not local_ok and prior_ok:
-        candidates.append(("pooled", Policy().train_risk(prior_X.tolist(), prior_y.tolist()).risk_model))
+        candidates.append(("pooled", fit_candidate("pooled", prior_X, prior_y)))
     if not candidates:
         return None, info
 
     chosen = candidates[0]
-    if len(candidates) > 1 and n >= MIN_LOCAL:
-        cut = max(MIN_FIT, int(n * 0.8))
-        hX, hy = X[cut:], y[cut:]
-        if len(hy) >= 3 and len(set(hy.tolist())) > 1:
-            scored = sorted(candidates, key=lambda c: _brier(c[1], hX, hy))
-            chosen = scored[0]
-            info["gate"] = "holdout_brier"
-            info["brier"] = {name: round(_brier(m, hX, hy), 4) for name, m in candidates}
-        else:
-            chosen = next((c for c in candidates if c[0] == "local"), candidates[0])
+    if gate_ok and len(candidates) > 1:
+        scored = sorted(candidates, key=lambda c: _brier(c[1], hX, hy))
+        chosen = scored[0]
+        info["gate"] = "holdout_brier"
+        info["holdout_n"] = int(len(hy))
+        info["brier"] = {name: round(_brier(m, hX, hy), 4) for name, m in candidates}
+    # Refit the selected family on every available row for deployment.
+    if chosen[0] == "local":
+        final = fit_candidate("local", X, y)
+    else:
+        final = fit_candidate("pooled", X, y)
+    chosen = (chosen[0], final)
     info["source"] = chosen[0]
     return chosen[1], info
 
@@ -438,7 +483,9 @@ def train_from_ledger(root: str, index: RepoIndex | None = None, store=None) -> 
                                                 split.y_cal), 4),
                 "conformal_coverage": round(conformal.coverage(raw_cal, split.y_cal), 4),
                 "conformal_coverage_ci": wilson_ci(hits, len(split.y_cal)),
-                "alpha": conformal.alpha, "pooling": info,
+                "alpha": conformal.alpha, "calibration_mode": conformal.mode,
+                "conformal_guarantee": conformal.mode == "split",
+                "pooling": info,
             }
             if len(split.y_test):
                 raw_test = np.asarray(model.predict(split.X_test), dtype=float).ravel()

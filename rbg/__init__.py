@@ -5,14 +5,23 @@ Only numpy is required.  The determinism baseline (index, retrieval, gates,
 ledger) runs without any model service.
 """
 
+from .diffing import ChangedSet, git_changed
 from .index import Chunk, RepoIndex, Symbol
 from .models import (
-    Decision, DriftModel, FlakyModel, GBDT, PlattScaler, Policy, TaskFeatures,
-    TestRank, TestSelector, drift_features, extract_features,
+    GBDT,
+    Decision,
+    DriftModel,
+    FlakyModel,
+    PlattScaler,
+    Policy,
+    TaskFeatures,
+    TestRank,
+    TestSelector,
+    drift_features,
+    extract_features,
 )
 from .orchestrator import EditOp, MainLLM, Orchestrator, Report
 from .plan import Drift, Plan, PlanStep, audit_completion, parse_plan, scope_drift
-from .diffing import ChangedSet, git_changed
 from .plan_drift import audit_document, section_validation
 from .providers import OpenAICompatLLM, parse_edits
 from .retrieval import BM25, DenseEncoder, Hit, HybridRetriever, Reranker

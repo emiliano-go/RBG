@@ -162,3 +162,59 @@ def test_subdirectory_cwd_is_translated(tmp_path):
     (tmp_path / "sub").mkdir()
     res = Sandbox(str(tmp_path)).run(["pwd"], cwd="sub")
     assert res.ok and res.stdout.strip() == f"{isolation.WORKSPACE}/sub"
+
+
+# -- project virtualenvs under the fixed mount ------------------------------ #
+def _make_venv(path):
+    import subprocess
+    subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(path)],
+                   check=True, capture_output=True)
+
+
+def test_project_venv_is_mounted_and_executes(tmp_path):
+    _bwrap_only()
+    root = tmp_path / "repo"
+    root.mkdir()
+    _make_venv(root / ".venv")
+    sb = Sandbox(str(root))
+    res = sb.run([sb.python_sandbox, "-c", "import sys; print(sys.prefix)"])
+    assert res.ok, res.stderr
+    assert res.stdout.strip() == "/tmp/venv"
+
+
+def test_venv_outside_workspace_is_mounted(tmp_path):
+    _bwrap_only()
+    root = tmp_path / "repo"
+    venv = tmp_path / "shared-venv"
+    root.mkdir()
+    _make_venv(venv)
+    os.symlink(venv, root / ".venv")
+    sb = Sandbox(str(root))
+    res = sb.run([sb.python, "-c", "import sys; print(sys.prefix)"])
+    assert res.ok, res.stderr
+    assert res.stdout.strip() == "/tmp/venv"
+
+
+def test_project_under_home_with_venv_executes(tmp_path):
+    _bwrap_only()
+    home = os.path.expanduser("~")
+    if not os.access(home, os.W_OK):
+        pytest.skip("home is not writable")
+    root = tmp_path if str(tmp_path).startswith(home) else None
+    if root is None:
+        import tempfile
+        root = __import__("pathlib").Path(tempfile.mkdtemp(prefix="rbg-home-", dir=home))
+    (root / "repo").mkdir(exist_ok=True)
+    repo = root / "repo"
+    _make_venv(repo / ".venv")
+    sb = Sandbox(str(repo))
+    res = sb.run([sb.python, "-c", "import sys; print(sys.prefix)"])
+    assert res.ok, res.stderr
+    assert res.stdout.strip() == "/tmp/venv"
+
+
+def test_host_data_directories_are_masked(tmp_path):
+    _bwrap_only()
+    res = Sandbox(str(tmp_path)).run(
+        ["sh", "-c", "test -z \"$(ls -A /var 2>/dev/null)\" && test -z \"$(ls -A /srv 2>/dev/null)\""])
+    assert res.ok, res.stderr

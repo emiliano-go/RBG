@@ -29,9 +29,9 @@ import tempfile
 import time
 from dataclasses import asdict, dataclass
 
+from rbg.index import RepoIndex
 from rbg.orchestrator import EditOp, Orchestrator
 from rbg.retrieval import HybridRetriever
-from rbg.index import RepoIndex
 from rbg.training import wilson_ci
 
 

@@ -5,15 +5,35 @@ from __future__ import annotations
 import json
 import os
 
+from .mcp_plan import (
+    plan_append,
+    plan_attach,
+    plan_audit,
+    plan_check,
+    plan_complete,
+    plan_create,
+    plan_get,
+    plan_modify,
+    plan_note,
+    plan_tree,
+)
 from .mcp_service import _index_summary
 from .mcp_tools import (
-    check_drift, db_stats, find_symbol, get_calibration, get_change_impact,
-    get_diagnostics, get_task_status, propose_patch, rank_tests, read_chunk,
-    retrieve_context, run_checks, search_code, train_models, vector_search,
-)
-from .mcp_plan import (
-    plan_append, plan_attach, plan_audit, plan_check, plan_complete, plan_create,
-    plan_get, plan_modify, plan_note, plan_tree,
+    check_drift,
+    db_stats,
+    find_symbol,
+    get_calibration,
+    get_change_impact,
+    get_diagnostics,
+    get_task_status,
+    propose_patch,
+    rank_tests,
+    read_chunk,
+    retrieve_context,
+    run_checks,
+    search_code,
+    train_models,
+    vector_search,
 )
 
 TOOLS = {

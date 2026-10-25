@@ -5,12 +5,25 @@ from __future__ import annotations
 import json
 import os
 
-from .diffing import ChangedSet, content_digest, git_changed, symbols_in, workspace_changed
+from .diffing import (
+    ChangedSet,
+    content_digest,
+    git_changed,
+    symbols_in,
+    workspace_changed,
+)
+from .mcp_service import (
+    _PLAN_DRIFT_LOGGED,
+    _PLAN_DRIFT_LOGGED_MAX,
+    _authorize_root,
+    _index,
+    _learned,
+    _store,
+)
 from .models import drift_features
 from .plan import PlanDocument, PlanEditor, audit_completion, parse_plan, scope_drift
 from .plan_drift import audit_document, section_validation
-from .mcp_service import (_PLAN_DRIFT_LOGGED, _PLAN_DRIFT_LOGGED_MAX,
-                          _authorize_root, _index, _learned, _store)
+
 
 # --------------------------------------------------------------------------- #
 # Plan document tools (Workstream H).  The store is the source of truth; every

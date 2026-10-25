@@ -19,10 +19,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from .checks import Toolchain, compile_command, detect, runner_argv
-from .isolation import Isolation, select as select_isolation
+from .isolation import Isolation
+from .isolation import select as select_isolation
 from .paths import resolve_within
 
 SCHEMA_VERSION = 1
+VENV_MOUNT = "/tmp/venv"
 # An allowlist, not a denylist: a secret is leaked by any variable we forget to
 # name, so only a known-safe set of variables reaches a sandboxed command.
 _ENV_ALLOW = ("PATH", "HOME", "LANG", "TMPDIR", "TEMP", "TMP", "USER",
@@ -71,14 +73,28 @@ class Sandbox:
         self.timeout_s = timeout_s
         self.network = network
         self.python = self._resolve_python(self.root)
+        self.venv = self._venv_root(self.python)
+        self.python_sandbox = f"{VENV_MOUNT}/bin/python" if self.venv else self.python
         self.log: list[CommandResult] = []
         self._isolation: Isolation | None = None
 
     def isolation(self) -> Isolation:
         """Selected once per sandbox; raises if no backend and no escape hatch."""
         if self._isolation is None:
-            self._isolation = select_isolation(self.network, self.root)
+            binds = ((self.venv, VENV_MOUNT),) if self.venv else ()
+            self._isolation = select_isolation(self.network, self.root, binds)
         return self._isolation
+
+    @staticmethod
+    def _venv_root(python: str) -> str | None:
+        """The real venv directory behind ``python``, or None for system Python."""
+        if python == "python3" or not os.path.exists(python):
+            return None
+        real = os.path.realpath(python)
+        bin_dir = os.path.dirname(real)
+        if os.path.basename(bin_dir) != "bin":
+            return None
+        return os.path.dirname(bin_dir)
 
     @staticmethod
     def _resolve_python(root: str) -> str:
@@ -106,30 +122,50 @@ class Sandbox:
         except OSError:
             pass
         env["PYTHONPYCACHEPREFIX"] = pycache
+        if self.venv:
+            # A host venv is mounted at a stable path; its original location may
+            # be hidden (or outside the workspace), so rewrite the pointer.
+            env["VIRTUAL_ENV"] = VENV_MOUNT
+            env["PATH"] = VENV_MOUNT + "/bin:" + env.get("PATH", "")
+            env.pop("PYTHONHOME", None)
         if not self.network:
             # advisory markers; a real deployment would add a netns/firewall
             env["NO_NETWORK"] = "1"
         return env
 
-    def run(self, argv: list[str], cwd: str | None = None, timeout_s: int | None = None) -> CommandResult:
+    def _translate(self, arg: str, iso: Isolation) -> str:
+        if arg == self.python or arg == self.python_sandbox:
+            return self.python_sandbox
+        if self.venv and arg.startswith(self.venv + os.sep):
+            return VENV_MOUNT + arg[len(self.venv):]
+        if arg.startswith(self.root + os.sep):
+            return iso.workspace + arg[len(self.root):]
+        return arg
+
+    def run(self, argv: list[str], cwd: str | None = None, timeout_s: int | None = None,
+            env: dict[str, str] | None = None) -> CommandResult:
         if not argv or isinstance(argv, str):
             raise TypeError("Sandbox.run takes a non-empty argv list, never a shell string")
         cwd = resolve_within(self.root, cwd or self.root)
         iso = self.isolation()
         prefix = list(iso.prefix)
         if iso.isolated:
-            # The repo is mounted at a fixed path; translate the host cwd.
+            # The repo is mounted at a fixed path; translate the host cwd and
+            # any absolute argv paths that point into the workspace or venv.
             rel = os.path.relpath(cwd, self.root)
             sandbox_cwd = iso.workspace if rel == "." else f"{iso.workspace}/{rel}"
             flag = "--chdir" if iso.backend == "bwrap" else "--cwd"
             prefix[-1:-1] = [flag, sandbox_cwd]
+            argv = [self._translate(arg, iso) for arg in argv]
         full = [*prefix, *argv]
         command = " ".join(argv)
         started = time.monotonic()
         timed_out = False
         try:
+            run_env = self._env()
+            run_env.update(env or {})
             proc = subprocess.run(
-                full, shell=False, cwd=cwd, env=self._env(),
+                full, shell=False, cwd=cwd, env=run_env,
                 capture_output=True, text=True, timeout=timeout_s or self.timeout_s,
                 preexec_fn=_limits,
             )
@@ -160,6 +196,19 @@ _PYTEST_LINE = re.compile(r"^(?P<id>[\w./:\\-]+::[\w:\[\].\-]+)\s+(?P<status>PAS
 _PYTEST_SUMMARY = re.compile(r"^(?P<status>PASSED|FAILED|ERROR|SKIPPED)\s+(?P<id>[\w./:\\-]+::[\w:\[\].\-]+)")
 _PYTEST_SKIP_LINE = re.compile(r"^SKIPPED\s+\[\d+\]\s+(?P<id>[^:]+):(?P<line>\d+)")
 _STATUS = {"PASSED": "passed", "FAILED": "failed", "ERROR": "error", "SKIPPED": "skipped"}
+_PYTEST_DURATION = re.compile(
+    r"^(?P<duration>\d+(?:\.\d+)?)s\s+(?:call|setup|teardown|collect)\s+"
+    r"(?P<id>[\w./:\\-]+::[\w:\[\].\-]+)")
+
+
+def parse_pytest_durations(output: str) -> dict[str, float]:
+    """Per-test wall time from ``pytest --durations=0`` (last phase wins)."""
+    out: dict[str, float] = {}
+    for line in output.splitlines():
+        m = _PYTEST_DURATION.match(line.strip())
+        if m:
+            out[m.group("id")] = float(m.group("duration"))
+    return out
 
 
 def parse_pytest(output: str) -> list[TestOutcome]:
@@ -219,7 +268,13 @@ class Verifier:
             return CommandResult("(no test command for this project)", self.sandbox.root,
                                  5, "", "", 0), []
         res = self.sandbox.run(cmd, timeout_s=timeout_s)
-        return res, parse_pytest(res.stdout + "\n" + res.stderr)
+        text = res.stdout + "\n" + res.stderr
+        outcomes = parse_pytest(text)
+        durations = parse_pytest_durations(text)
+        for outcome in outcomes:
+            if outcome.test_id in durations:
+                outcome.duration_s = durations[outcome.test_id]
+        return res, outcomes
 
 
 @dataclass

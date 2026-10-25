@@ -53,13 +53,13 @@ reloads the MCP server list.
 | `RBG_TOOL_TIMEOUT_MS` | Default MCP tool wall-clock budget (default `60000`). |
 | `RBG_TOOL_TIMEOUT_MAX_MS` | Non-negotiable per-call cap (default `300000`). |
 | `RBG_READ_BUDGET_MS` | Soft retrieval budget before a result is marked degraded. |
+| `RBG_FAULT_LOCALIZATION` | Set `1` to run Ochiai line-coverage localization on failures (opt-in: reruns the suite). |
 | `RBG_STATIC_MODEL`, `RBG_EMBEDDING_MODEL`, `RBG_RERANKER` | Optional encoders/reranker. |
 | `RBG_LLM_BASE_URL`, `RBG_LLM_API_KEY`, `RBG_LLM_MODEL`, `RBG_LLM_TIMEOUT` | Live-model provider for `rbg replay`/benchmarks. |
 
 ## Model artifacts
 
 Every model is optional and selected by environment; the deterministic path is
-unchanged when none is configured. and selected by environment; the deterministic path is
 unchanged when none is configured.
 
 | Preset | Env | Notes |

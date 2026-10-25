@@ -487,18 +487,33 @@ class ConformalCalibrator:
         self.cal_scores: np.ndarray | None = None
         self.train_matrix: np.ndarray | None = None
         self.fitted = False
+        self.mode = "shared"
         self.version = "conformal-platt-v2"
 
     def fit(self, raw_scores, labels, matrix=None) -> "ConformalCalibrator":
         raw = np.asarray(raw_scores, dtype=float)
         y = np.asarray(labels, dtype=float)
-        self.base.fit(raw, y)
-        p = np.array([self.base(s) for s in raw])
-        s_true = np.where(y > 0.5, p, 1.0 - p)
-        n = len(s_true)
+        n = len(raw)
+        # Standard split conformal: the Platt map and the conformal quantile
+        # must not be learned from the same observations.  With enough rows we
+        # split inside the caller's calibration slice; otherwise we report the
+        # shared-sample mode instead of implying a finite-sample guarantee.
+        if n >= 40:
+            cut = n // 2
+            base_raw, base_y = raw[:cut], y[:cut]
+            score_raw, score_y = raw[cut:], y[cut:]
+            self.mode = "split"
+        else:
+            base_raw, base_y = raw, y
+            score_raw, score_y = raw, y
+            self.mode = "shared"
+        self.base.fit(base_raw, base_y)
+        p = np.array([self.base(s) for s in score_raw])
+        s_true = np.where(score_y > 0.5, p, 1.0 - p)
+        m = len(s_true)
         self.cal_scores = s_true
-        if n:
-            q = min(1.0, math.ceil((n + 1) * (1.0 - self.alpha)) / n)
+        if m:
+            q = min(1.0, math.ceil((m + 1) * (1.0 - self.alpha)) / m)
             self.qhat = float(np.quantile(s_true, q))
         self.train_matrix = None if matrix is None else np.asarray(matrix, dtype=float)
         self.fitted = True

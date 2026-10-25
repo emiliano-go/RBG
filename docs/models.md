@@ -12,7 +12,7 @@ its row.
 |---|---|---|---|
 | **GBDT** | Gradient-boosted decision trees (numpy) | Risk score for a proposed action/change from `TaskFeatures`. | `fit(X, y)`, `predict(X)` |
 | **PlattScaler** | Platt scaling | Maps raw risk scores to calibrated probabilities (logistic fit). | `fit(scores, labels)` → calibrated score |
-| **ConformalCalibrator** | Split conformal prediction | Turns raw scores into prediction sets with a coverage guarantee; drives OOD detection. | `fit(raw, labels, matrix=None)`, `predict_set(raw)` |
+| **ConformalCalibrator** | Split conformal prediction | Turns raw scores into prediction sets with a coverage guarantee; drives OOD detection. `fit()` holds out half the calibration slice for the quantile when it has at least 40 rows, and reports `mode="shared"` rather than implying a guarantee when it does not. | `fit(raw, labels, matrix=None)`, `predict_set(raw)` |
 | **Policy** | Decision policy | Chooses the next step from the bounded action menu; holds the GBDT risk model and the uncertainty/OOD gates. | `select_action(...)` + `risk_model` |
 | **TestSelector** | Ranker | Ranks tests by relevance to changed symbols (token overlap + learned weights). | `rank(tests, changed_symbols)` → `[TestRank]` |
 | **FlakyModel** | Flakiness predictor | Estimates P(flaky) from a test's pass/fail history and duration. | `predict(history, duration)` |

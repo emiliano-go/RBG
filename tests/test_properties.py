@@ -9,9 +9,9 @@ from hypothesis import strategies as st
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from rbg import persist  # noqa: E402
 from rbg.paths import resolve_within  # noqa: E402
 from rbg.plan import parse_plan, scope_drift  # noqa: E402
-from rbg import persist  # noqa: E402
 
 _SEGMENT = st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_-", min_size=1, max_size=12)
 _SAFE_PATH = st.lists(_SEGMENT, min_size=1, max_size=5).map(lambda parts: os.path.join(*parts))

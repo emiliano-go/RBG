@@ -157,6 +157,14 @@ the complete unified diff before removing the workspace, and the returned
 `Report.patch` remains readable afterwards. Failure to create an isolated
 workspace is an error, not a silent in-place fallback.
 
+## Fault localization
+
+`rbg/fault_localization.py` collects per-test Python line coverage with a small
+pytest tracer plugin and computes deterministic Ochiai suspiciousness over
+failing vs passing spectra. It ranks lines and maps them back to symbols for
+retrieval/test selection. It is opt-in (`RBG_FAULT_LOCALIZATION=1`), advisory,
+and never changes a verification verdict.
+
 ## Verification status
 
 `verified` requires recorded evidence: a passing compile gate, at least one test

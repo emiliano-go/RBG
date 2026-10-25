@@ -11,22 +11,35 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from rbg.index import RepoIndex  # noqa: E402
-from rbg.models import (  # noqa: E402
-    ACTIONS, FEATURE_NAMES, ChangeImpactModel, ConformalCalibrator, FlakyModel, GBDT,
-    PlattScaler, Policy, TestSelector, extract_features, select_action,
-)
-from rbg.retrieval import BM25, DenseEncoder, HybridRetriever  # noqa: E402
-from rbg.verify import Sandbox, parse_pytest  # noqa: E402
-from rbg.__main__ import (  # noqa: E402
-    BUGGY_SHOP, FIXED_SHOP, TEST_SHOP, ScriptedLLM, _make_demo_repo,
-)
-from rbg.orchestrator import EditOp, Orchestrator  # noqa: E402
-from rbg.training import LearnedModels, train_from_ledger  # noqa: E402
-from rbg.drift import drift_report, psi  # noqa: E402
-from rbg import mcp_server  # noqa: E402
 import rbg.mcp_service as mcp_service  # noqa: E402
 import rbg.retrieval as retrieval  # noqa: E402
+from rbg import mcp_server  # noqa: E402
+from rbg.__main__ import (  # noqa: E402
+    BUGGY_SHOP,
+    FIXED_SHOP,
+    TEST_SHOP,
+    ScriptedLLM,
+    _make_demo_repo,
+)
+from rbg.drift import drift_report, psi  # noqa: E402
+from rbg.index import RepoIndex  # noqa: E402
+from rbg.models import (  # noqa: E402
+    ACTIONS,
+    FEATURE_NAMES,
+    GBDT,
+    ChangeImpactModel,
+    ConformalCalibrator,
+    FlakyModel,
+    PlattScaler,
+    Policy,
+    TestSelector,
+    extract_features,
+    select_action,
+)
+from rbg.orchestrator import EditOp, Orchestrator  # noqa: E402
+from rbg.retrieval import BM25, DenseEncoder, HybridRetriever  # noqa: E402
+from rbg.training import LearnedModels, train_from_ledger  # noqa: E402
+from rbg.verify import Sandbox, parse_pytest  # noqa: E402
 
 
 def _repo(tmp_path):
@@ -49,9 +62,10 @@ def test_bm25_ranks_relevant_first():
 
 def test_large_corpus_stays_lexical_only(monkeypatch):
     """Above the dense cap the read path must not fit/encode the whole corpus."""
-    import rbg.retrieval as retrieval
     import tempfile
     from pathlib import Path
+
+    import rbg.retrieval as retrieval
     d = Path(tempfile.mkdtemp())
     idx = _repo(d)
     monkeypatch.setattr(retrieval, "LSI_MAX_CORPUS", 0)
@@ -132,6 +146,7 @@ def test_dense_encoder_is_deterministic_across_processes():
 def test_query_expansion_adds_related_terms():
     import tempfile
     from pathlib import Path
+
     from rbg.retrieval import BM25, expand_query
     d = Path(tempfile.mkdtemp())
     (d / "m.py").write_text(
@@ -233,6 +248,20 @@ def test_sandbox_blocks_escape_and_runs(tmp_path):
     assert out.ok and "hi" in out.stdout
     with pytest.raises(PermissionError):
         sb.run(["ls"], cwd="/")
+
+
+def test_parse_pytest_durations_attaches_real_times():
+    from rbg.verify import parse_pytest, parse_pytest_durations
+    text = ("0.01s setup    tests/test_a.py::test_one\n"
+            "0.42s call     tests/test_a.py::test_one\n"
+            "0.03s call     tests/test_a.py::test_two\n"
+            "tests/test_a.py::test_one PASSED\n")
+    durations = parse_pytest_durations(text)
+    assert durations["tests/test_a.py::test_one"] == 0.42
+    outcomes = parse_pytest(text)
+    for o in outcomes:
+        o.duration_s = durations.get(o.test_id, 0.0)
+    assert {o.test_id: o.duration_s for o in outcomes}["tests/test_a.py::test_one"] == 0.42
 
 
 def test_parse_pytest_extracts_outcomes():
@@ -1010,7 +1039,7 @@ def _mixed_repo(tmp_path):
 
 
 def test_path_class_weight_prefers_source(tmp_path):
-    from rbg.retrieval import _path_class, PATH_WEIGHT
+    from rbg.retrieval import PATH_WEIGHT, _path_class
     assert _path_class("core.py") == "source"
     assert _path_class("docs/guide.md") == "docs"
     assert _path_class("tests/test_core.py") == "tests"
@@ -1396,12 +1425,13 @@ def test_selector_labels_mark_only_new_regressions():
             {"test_id": "y", "status": "failed"}]}},
     ]
     pairs = [(e[2], e[-1]) for e in selector_examples(entries)]
-    assert pairs == [("x", 0), ("y", 1), ("x", 1), ("y", 0)]  # y already red at t1
+    assert pairs == [("x", 0), ("y", 0), ("x", 1), ("y", 0)]  # first y failure is inconclusive; y already red at t1
 
 
 # -- deterministic benchmark harness ---------------------------------------- #
 def test_benchmark_smoke_suite_and_compare():
     import os
+
     from eval.benchmark import compare, run_suite
     suite = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                          "eval", "suites", "smoke")
@@ -1416,6 +1446,7 @@ def test_benchmark_smoke_suite_and_compare():
 
 def test_cli_eval_and_compare_forward_their_flags(tmp_path):
     import json
+
     from rbg.__main__ import main
     suite = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                          "eval", "suites", "smoke")
@@ -1657,6 +1688,7 @@ def test_mcp_plan_tools_roundtrip_and_persist(tmp_path):
 
 def test_curated_suite_is_well_formed():
     import os
+
     from eval.benchmark import load_suite
     suite = load_suite(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                     "eval", "suites", "curated"))
@@ -1674,6 +1706,7 @@ def test_curated_suite_is_well_formed():
 
 def test_hard_suite_makes_retrieval_non_trivial():
     import os
+
     from eval.benchmark import load_suite
     from eval.retrieval_ablation import run
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1716,6 +1749,7 @@ def test_parse_edits_rejects_a_reply_with_no_json():
 
 def test_replay_example_end_to_end(tmp_path):
     import shutil
+
     from rbg.__main__ import cmd_replay
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     root = tmp_path / "repo"
@@ -1746,6 +1780,7 @@ def test_plan_audit_finishes_multifile_fixes():
 
 def test_swebench_retrieval_scores_gold_files(tmp_path):
     import subprocess
+
     from eval.swebench_retrieval import parse_patch_files, run_report
     patch = ("diff --git a/target.py b/target.py\nindex 1..2 100644\n"
              "--- a/target.py\n+++ b/target.py\n")
@@ -1927,9 +1962,10 @@ def test_encoder_from_state_dispatches_semantic_kind(monkeypatch):
 # -- experience memory is causal (F3) --------------------------------------- #
 def test_experience_memory_causes_resolution(tmp_path):
     import re
+
     from rbg import db
-    from rbg.retrieval import EXPERIENCE_DIM, experience_encoder
     from rbg.__main__ import FIXED_SHOP
+    from rbg.retrieval import EXPERIENCE_DIM, experience_encoder
     root = str(tmp_path / "exp-causal")
     _make_demo_repo(root)
     task = "fix the discount calculation so a 10 percent discount applies correctly"
@@ -1976,13 +2012,13 @@ def test_patch_head_trains_from_regression_ledger(tmp_path):
         status = "failed" if i % 2 else "passed"
         ledger.record(component="verifier", task_id=tid, repo_id="r",
                       revision=idx.revision, model_name="pytest",
-                      result={"outcomes": [{"test_id": f"test_m.py::test_{i}",
+                      result={"outcomes": [{"test_id": "test_m.py::test_f",
                                             "status": status}]})
     store.close()
     models = train_from_ledger(str(root), index=idx)
     assert models.patch_trained
     assert models.metrics["patch"]["n"] >= 8
-    assert models.metrics["patch"]["positive_rate"] == 0.5
+    assert models.metrics["patch"]["positive_rate"] == 0.1  # only the first green->red transition
 
 
 # -- autonomous plan drift ------------------------------------------------ #
@@ -2122,6 +2158,7 @@ def test_plan_complete_requires_acceptance_evidence(tmp_path):
 
 def test_drift_model_heuristic_and_training():
     import numpy as np
+
     from rbg.models import DRIFT_FEATURE_NAMES, DriftModel, drift_features
     clean = drift_features({"declared_files": ["a.py"], "status": "open"},
                            {"blockers": [], "warnings": []}, 1)
@@ -2253,6 +2290,7 @@ def test_changed_set_cap_blocks(tmp_path):
 
 def test_no_commit_repo_reports_untracked(tmp_path):
     import subprocess
+
     from rbg.diffing import git_changed
     root = tmp_path / "repo"
     root.mkdir()
@@ -2328,6 +2366,7 @@ def test_default_index_path_waits_for_a_small_repo(tmp_path, monkeypatch):
 def test_retriever_serves_lexical_while_semantic_warms(tmp_path, monkeypatch):
     """A cold semantic build must not block search_code; lexical answers first."""
     import time
+
     from rbg.retrieval import LexicalOnlyEncoder
     monkeypatch.setattr(retrieval, "LSI_MAX_CORPUS", 10 ** 9)
     root = str(tmp_path)
