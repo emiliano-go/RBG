@@ -129,6 +129,139 @@
         "test_stats.py::test_importable"
       ],
       "category": "interacting"
+    },
+    {
+      "id": "insertion_bounds",
+      "category": "insertion-only",
+      "task": "guard out-of-range element access",
+      "expected_files": [
+        "bounds.py"
+      ],
+      "files": {
+        "bounds.py": "def element(xs, i):\n    return xs[i]\n",
+        "test_bounds.py": "from bounds import element\n\n\ndef test_oob():\n    assert element([1], 5) is None\n\n\ndef test_in_range():\n    assert element([1], 0) == 1\n"
+      },
+      "fix": {
+        "bounds.py": "def element(xs, i):\n    if i >= len(xs):\n        return None\n    return xs[i]\n"
+      },
+      "expect_pass": [
+        "test_bounds.py::test_oob"
+      ],
+      "must_keep_passing": [
+        "test_bounds.py::test_in_range"
+      ]
+    },
+    {
+      "id": "deletion_stray_reset",
+      "category": "deletion-only",
+      "task": "remove the stray counter reset",
+      "expected_files": [
+        "counter.py"
+      ],
+      "files": {
+        "counter.py": "def count_to(n):\n    total = 0\n    total = 5\n    for _ in range(n):\n        total += 1\n    return total\n",
+        "test_counter.py": "from counter import count_to\n\n\ndef test_count():\n    assert count_to(2) == 2\n\n\ndef test_importable():\n    assert callable(count_to)\n"
+      },
+      "fix": {
+        "counter.py": "def count_to(n):\n    total = 0\n    for _ in range(n):\n        total += 1\n    return total\n"
+      },
+      "expect_pass": [
+        "test_counter.py::test_count"
+      ],
+      "must_keep_passing": [
+        "test_counter.py::test_importable"
+      ]
+    },
+    {
+      "id": "multiline_bounds",
+      "category": "multi-line",
+      "task": "fix both bound helpers",
+      "expected_files": [
+        "bounds2.py"
+      ],
+      "files": {
+        "bounds2.py": "def at_least(v):\n    return max(v, 0) - 1\n\n\ndef at_most(v):\n    return min(v, 10) + 1\n",
+        "test_bounds2.py": "from bounds2 import at_least, at_most\n\n\ndef test_least():\n    assert at_least(3) == 3\n\n\ndef test_most():\n    assert at_most(4) == 4\n\n\ndef test_importable():\n    assert callable(at_least) and callable(at_most)\n"
+      },
+      "fix": {
+        "bounds2.py": "def at_least(v):\n    return max(v, 0)\n\n\ndef at_most(v):\n    return min(v, 10)\n"
+      },
+      "expect_pass": [
+        "test_bounds2.py::test_least",
+        "test_bounds2.py::test_most"
+      ],
+      "must_keep_passing": [
+        "test_bounds2.py::test_importable"
+      ]
+    },
+    {
+      "id": "multifile_config",
+      "category": "multi-file",
+      "task": "fix both configured coefficients",
+      "expected_files": [
+        "alpha.py",
+        "beta.py"
+      ],
+      "files": {
+        "alpha.py": "A = 2\n",
+        "beta.py": "B = 2\n",
+        "combine.py": "from alpha import A\nfrom beta import B\n\n\ndef combine():\n    return A + B\n",
+        "test_combine.py": "from combine import combine\n\n\ndef test_combine():\n    assert combine() == 7\n\n\ndef test_importable():\n    assert callable(combine)\n"
+      },
+      "fix": {
+        "alpha.py": "A = 3\n",
+        "beta.py": "B = 4\n"
+      },
+      "expect_pass": [
+        "test_combine.py::test_combine"
+      ],
+      "must_keep_passing": [
+        "test_combine.py::test_importable"
+      ]
+    },
+    {
+      "id": "indirect_table",
+      "category": "indirect",
+      "task": "fix the lookup table value",
+      "expected_files": [
+        "lookup.py"
+      ],
+      "files": {
+        "lookup.py": "TABLE = {'x': 1}\n",
+        "use_lookup.py": "from lookup import TABLE\n\n\ndef get(key):\n    return TABLE.get(key, 0)\n",
+        "test_lookup.py": "from use_lookup import get\n\n\ndef test_value():\n    assert get('x') == 2\n\n\ndef test_missing():\n    assert get('missing') == 0\n"
+      },
+      "fix": {
+        "lookup.py": "TABLE = {'x': 2}\n"
+      },
+      "expect_pass": [
+        "test_lookup.py::test_value"
+      ],
+      "must_keep_passing": [
+        "test_lookup.py::test_missing"
+      ]
+    },
+    {
+      "id": "interacting_chain",
+      "category": "interacting",
+      "task": "fix the base helper used by doubled",
+      "expected_files": [
+        "chain.py"
+      ],
+      "files": {
+        "chain.py": "def base(x):\n    return x + 1\n\n\ndef doubled(x):\n    return base(x) * 2\n",
+        "test_chain.py": "from chain import base, doubled\n\n\ndef test_base():\n    assert base(2) == 2\n\n\ndef test_doubled():\n    assert doubled(2) == 4\n\n\ndef test_importable():\n    assert callable(base) and callable(doubled)\n"
+      },
+      "fix": {
+        "chain.py": "def base(x):\n    return x\n\n\ndef doubled(x):\n    return base(x) * 2\n"
+      },
+      "expect_pass": [
+        "test_chain.py::test_base",
+        "test_chain.py::test_doubled"
+      ],
+      "must_keep_passing": [
+        "test_chain.py::test_importable"
+      ]
     }
   ]
 }

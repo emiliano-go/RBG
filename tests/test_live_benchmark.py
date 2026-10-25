@@ -63,3 +63,12 @@ def test_compare_with_adds_metric_deltas(monkeypatch, tmp_path):
     out = live_benchmark.run_live("ignored", model=FixLLM(), repeats=1)
     diff = live_benchmark.compare_metrics(base, out)
     assert diff["resolution_rate"]["delta"] == 1.0
+
+
+def test_paired_ab_reports_task_level_deltas(monkeypatch):
+    monkeypatch.setattr(live_benchmark, "load_suite", lambda _: SUITE)
+    out = live_benchmark.run_ab("ignored", model=FixLLM(), repeats=1)
+    assert out["kind"] == "live-ab"
+    assert out["paired"]["n"] == 1
+    assert out["comparison"]["resolution_rate"]["delta"] == 0.0
+    assert out["paired"]["resolution_delta"] == 0.0

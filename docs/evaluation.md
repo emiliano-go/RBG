@@ -83,12 +83,23 @@ python3 -m eval.fault_localization_eval --suite eval/suites/smoke --out fl.json
 python3 -m eval.fault_localization_eval --suite eval/suites/fl-broad --out fl-broad.json
 ```
 
-The broad suite covers insertion-only, deletion-only, multi-line, multi-file,
-interacting-failure, and indirect-constant fixes. It reports every task,
-skipped ids, per-category Hit@1/5/10. Current broad baseline: Hit@1 0.33 (many correct lines
-tie at the same score), changed-file recall@5 1.0, and fix-region recall@5 1.0.
-CI gates the broad suite on file and region recall; the smoke suite remains the
-fast Hit@1 = 1.0 guard.
+The broad suite has two tasks in each of six categories: insertion-only,
+deletion-only, multi-line, multi-file, interacting-failure, and
+indirect-constant. It reports every task, skipped ids, per-category
+Hit@1/5/10, Wilson intervals for Hit@5, and mean intervals for file/region
+recall@5. Current broad baseline: Hit@1 0.33 (many correct lines tie),
+changed-file recall@5 1.0, fix-region recall@5 1.0. CI gates the broad suite
+on file and region recall; the smoke suite remains the fast Hit@1 = 1.0 guard.
+
+The curated 58-task suite is the larger held-out check:
+
+```bash
+python3 -m eval.fault_localization_eval --suite eval/suites/curated --out fl-curated.json
+```
+
+Current result: file recall@5 0.966, fix-region recall@5 0.954, Hit@1 0.19.
+Fifteen tasks report no passing spectrum, which is visible in
+`no_passing_spectrum`; their scores are therefore less informative.
 
 `metrics.hit_at_1/5/10` reports how often a line changed by the fix appears in
 the top suspects. CI enforces the smoke-suite baseline (`hit_at_1 = 1.0`) and
@@ -96,13 +107,13 @@ requires every selected task to be evaluated; diagnostic runs can pass
 `--allow-incomplete`. To measure its effect on repair, A/B the live benchmark:
 
 ```bash
-python3 -m eval.live_benchmark --suite <held-out-suite> --repeats 3 --out without.json
-python3 -m eval.live_benchmark --suite <held-out-suite> --repeats 3 \
-  --fault-localization --out with.json --compare-with without.json
+python3 -m eval.live_benchmark --suite <held-out-suite> --repeats 3 --ab --out fl-ab.json
 ```
 
-`--compare-with` adds candidate-minus-baseline deltas for resolution,
-regressions, coverage, latency, tokens, and cost.
+`--ab` runs localization-off and localization-on against the same tasks and
+model, then reports aggregate deltas plus paired task-level improvements and
+regressions. Separate runs can still be compared with `--compare-with` for
+resolution, regressions, coverage, latency, tokens, and cost.
 
 No training rows are needed for localization itself.
 

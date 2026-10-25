@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import difflib
 import json
+import math
 import os
 import shutil
 import sys
@@ -21,14 +22,16 @@ from pathlib import Path
 
 from eval.benchmark import load_suite
 from rbg.fault_localization import collect, rank_lines
+from rbg.training import wilson_ci
 from rbg.verify import Sandbox
 
 
 def _changed_lines(old: str, new: str) -> tuple[set[int], set[str]]:
     """Old-file line anchors and edit kinds for a reference fix.
 
-    Insert-only fixes have no removed line; anchor them to the preceding old
-    line so they can still be scored against coverage of the buggy code.
+    Insert-only fixes have no removed line; anchor them to the following
+    existing old line (or the preceding line at EOF) so they can still be
+    scored against coverage of the buggy code.
     """
     lines: set[int] = set()
     kinds: set[str] = set()
@@ -45,6 +48,15 @@ def _changed_lines(old: str, new: str) -> tuple[set[int], set[str]]:
             kinds.add("replacement")
             lines.update(range(i1 + 1, i2 + 1))
     return lines, kinds
+
+
+def _mean_ci(values: list[float]) -> list[float]:
+    if not values:
+        return [0.0, 0.0]
+    mean = sum(values) / len(values)
+    var = sum((v - mean) ** 2 for v in values) / len(values)
+    half = 1.96 * math.sqrt(var / len(values))
+    return [round(max(0.0, mean - half), 4), round(min(1.0, mean + half), 4)]
 
 
 def _regions(lines: set[tuple[str, int]]) -> list[tuple[str, int, int]]:
@@ -107,8 +119,6 @@ def _ground_truth(task: dict) -> tuple[set[tuple[str, int]], str]:
 def evaluate_task(task: dict, root: str) -> dict:
     expected = list(task.get("expect_pass") or [])
     passing = list(task.get("must_keep_passing") or [])
-    if not passing:
-        passing = [t for t in expected if t not in set(expected)]
     truth, derived = _ground_truth(task)
     kind = task.get("category") or derived
     if not truth or not expected:
@@ -172,6 +182,14 @@ def run_suite(suite_dir: str, limit: int = 0) -> dict:
             **{f"region_recall_at_{k}": round(
                 sum(r["region_recall"][k] for r in usable) / n, 4)
                if n else 0.0 for k in (1, 5, 10)},
+            "hit_at_1_ci": wilson_ci(
+                sum(1 for r in usable if r["top_hits"][1]), n),
+            "hit_at_5_ci": wilson_ci(
+                sum(1 for r in usable if r["top_hits"][5]), n),
+            "file_recall_at_5_ci": _mean_ci(
+                [r["file_recall"][5] for r in usable]),
+            "region_recall_at_5_ci": _mean_ci(
+                [r["region_recall"][5] for r in usable]),
         },
         "no_passing_spectrum": [r["id"] for r in usable
                                 if not r["has_passing_spectrum"]],
@@ -180,6 +198,10 @@ def run_suite(suite_dir: str, limit: int = 0) -> dict:
                 f"hit_at_{k}": round(
                     sum(1 for r in rows if r["top_hits"][k]) / len(rows), 4)
                 for k in (1, 5, 10)}, **{
+                "hit_at_5_ci": wilson_ci(
+                    sum(1 for r in rows if r["top_hits"][5]), len(rows)),
+                "region_recall_at_5_ci": _mean_ci(
+                    [r["region_recall"][5] for r in rows])}, **{
                 f"file_recall_at_{k}": round(
                     sum(r["file_recall"][k] for r in rows) / len(rows), 4)
                 for k in (1, 5, 10)}, **{

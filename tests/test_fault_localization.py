@@ -106,9 +106,11 @@ def test_module_import_time_lines_are_attributed_to_tests(tmp_path):
     (tmp_path / "use_config.py").write_text(
         "from config import LIMIT\n\n\ndef allowed(n):\n    return n <= LIMIT\n")
     (tmp_path / "test_config.py").write_text(
-        "from use_config import allowed\n\n\ndef test_large():\n    assert allowed(8)\n")
-    cov = fl.collect(str(tmp_path), Sandbox(str(tmp_path)), ["test_config.py::test_large"])
+        "from use_config import allowed\n\n\ndef test_large():\n    assert allowed(8)\n\n\ndef test_small():\n    assert allowed(1)\n")
+    cov = fl.collect(str(tmp_path), Sandbox(str(tmp_path)),
+                     ["test_config.py::test_large", "test_config.py::test_small"])
     assert ("config.py", 1) in cov["test_config.py::test_large"]
+    assert ("config.py", 1) in cov["test_config.py::test_small"]
 
 
 def test_file_and_region_recall_require_each_fix_site():

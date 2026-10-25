@@ -36,6 +36,50 @@ def compare_metrics(base: dict, candidate: dict) -> dict:
     return out
 
 
+def paired_delta(baseline: dict, candidate: dict) -> dict:
+    """Task-level paired comparison keyed by (repeat, id)."""
+    def index(doc):
+        return {(r["repeat"], r["id"]): r for r in doc.get("runs", [])}
+    a, b = index(baseline), index(candidate)
+    keys = sorted(set(a) & set(b))
+    improved = [k for k in keys if b[k]["resolved"] and not a[k]["resolved"]]
+    regressed = [k for k in keys if a[k]["resolved"] and not b[k]["resolved"]]
+    return {
+        "n": len(keys),
+        "resolution_delta": round(
+            (sum(1 for k in keys if b[k]["resolved"])
+             - sum(1 for k in keys if a[k]["resolved"])) / len(keys), 4)
+        if keys else 0.0,
+        "improved": [k[1] for k in improved],
+        "regressed": [k[1] for k in regressed],
+        "mean_iteration_delta": round(
+            _mean([b[k]["iterations"] - a[k]["iterations"] for k in keys]), 4)
+        if keys else 0.0,
+    }
+
+
+def run_ab(suite_dir: str, *, model: OpenAICompatLLM, repeats: int = 1,
+           use_retrieval: bool = True, use_plan_audit: bool = True,
+           max_iterations: int = 3, task_ids: list[str] | None = None,
+           price_in: float = 0.0, price_out: float = 0.0) -> dict:
+    """Paired A/B: fault localization off vs on, same tasks and model."""
+    common = dict(repeats=repeats, use_retrieval=use_retrieval,
+                  use_plan_audit=use_plan_audit,
+                  max_iterations=max_iterations, task_ids=task_ids,
+                  price_in=price_in, price_out=price_out)
+    baseline = run_live(suite_dir, model=model, fault_localization=False, **common)
+    candidate = run_live(suite_dir, model=model, fault_localization=True, **common)
+    return {
+        "kind": "live-ab",
+        "suite": baseline["suite"], "model": baseline["model"],
+        "repeats": repeats,
+        "baseline": baseline,
+        "candidate": candidate,
+        "comparison": compare_metrics(baseline, candidate),
+        "paired": paired_delta(baseline, candidate),
+    }
+
+
 def _pct(xs: list[float], q: float) -> float:
     if not xs:
         return 0.0
@@ -129,23 +173,29 @@ def main(argv: list[str] | None = None) -> int:
                     help="enable Ochiai evidence + repair attempts (A/B this flag)")
     ap.add_argument("--compare-with", default="",
                     help="baseline result JSON; adds candidate-minus-baseline metrics")
+    ap.add_argument("--ab", action="store_true",
+                    help="run paired localization-off/on experiments on the same tasks")
     args = ap.parse_args(argv)
 
     model = OpenAICompatLLM(model=args.model or None, base_url=args.base_url or None)
     if not model.api_key and "localhost" not in model.base_url and "127.0.0.1" not in model.base_url:
         print("RBG_LLM_API_KEY is required for a hosted endpoint")
         return 2
-    result = run_live(
-        args.suite, model=model, repeats=max(1, args.repeats),
+    common = dict(
+        repeats=max(1, args.repeats),
         use_retrieval=not args.no_retrieval,
         use_plan_audit=not args.no_plan_audit,
         max_iterations=args.max_iterations,
         task_ids=[t for t in args.tasks.split(",") if t],
-        price_in=args.price_in, price_out=args.price_out,
-        fault_localization=args.fault_localization)
-    if args.compare_with:
-        with open(args.compare_with, encoding="utf-8") as fh:
-            result["comparison"] = compare_metrics(json.load(fh), result)
+        price_in=args.price_in, price_out=args.price_out)
+    if args.ab:
+        result = run_ab(args.suite, model=model, **common)
+    else:
+        result = run_live(args.suite, model=model,
+                          fault_localization=args.fault_localization, **common)
+        if args.compare_with:
+            with open(args.compare_with, encoding="utf-8") as fh:
+                result["comparison"] = compare_metrics(json.load(fh), result)
     text = json.dumps(result, indent=2)
     if args.out:
         with open(args.out, "w", encoding="utf-8") as fh:
