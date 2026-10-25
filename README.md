@@ -139,8 +139,11 @@ All tools return MCP `structuredContent`; every response carries the repo
 
 ## Models
 
-Everything below is small, trained from the ledger, and deterministic given its
-inputs. None of them generate text — the LLM is the only generator.
+Every model below is small and deterministic given its inputs — learned heads
+are fitted from the ledger, encoders are either fixed hashing/SVD or pinned
+offline checkpoints. None of them generate text — the LLM is the only
+generator. Each model is advisory unless it is the deterministic gate named in
+its row.
 
 ### Learned models (`harness/models.py`)
 
@@ -156,6 +159,20 @@ inputs. None of them generate text — the LLM is the only generator.
 | **PatchCorrectnessModel** | Static patch risk | P(regression) from patch shape (test edits, trivial changes, context overlap, size) — the "passing tests ≠ correct patch" signal (ODS/Leopard-style). | `predict(features)`, `train(X, y)` |
 | **Reranker** | Linear feature reranker | Reorders retrieval hits using query/chunk features; trained from ledger relevance. | `score(query, chunk)`, `rerank(...)`, `train(examples)` |
 | **CrossEncoderReranker** | Optional code cross-encoder | Heavier reranker behind the `semantic` extra; falls back to `Reranker`. | `rerank(query, hits, chunks)` |
+| **DriftModel** | Shadow GBDT head over audit features | Scores plan-audit features (`drift_features`) to predict scope drift; reports `max_score` only and never overrides the deterministic audit verdict. | `fit(X, y)`, `predict(X)` |
+
+### Retrieval and embedding models
+
+These are used to *find* context, not to decide or generate. All are optional;
+the deterministic path falls back cleanly when none is configured.
+
+| Model | Kind | Purpose | Selected by |
+|---|---|---|---|
+| **DenseEncoder** | Deterministic hashing encoder | Reproducible dense embedding for chunks and experience memory; no training, identical across processes. | Default; `experience_encoder()` |
+| **LSIEncoder** | Truncated-SVD latent semantic index | Corpus-fit dense vectors that capture term co-occurrence; warm-start `refresh` embeds new chunks without re-running SVD. | Default dense path |
+| **StaticCodeEncoder** (`potion-code`) | 16M static code encoder | CPU-only embeddings for semantic retrieval; distilled from CodeRankEmbed, no torch, falls back to LSI/hash when absent. | `RBG_STATIC_MODEL=<path>` |
+| **SentenceTransformerEncoder** (`code-rank`) | 137M code bi-encoder (CodeRankEmbed) | Higher-quality code embeddings with 8192-token context; requires `[semantic]`, falls back to the dependency-free encoder when unavailable. | `RBG_EMBEDDING_MODEL=<path>` |
+| **gte-reranker** | 149M ModernBERT cross-encoder | Final-stage reranking of retrieval hits; requires `[semantic]`. | `RBG_RERANKER=gte-reranker` |
 
 Experience memory: every verified run is written to the ledger as an
 (issue → fix) experience and the single most similar prior fix is recalled
@@ -479,7 +496,7 @@ unchanged when none is configured.
 | Preset | Env | Notes |
 |---|---|---|
 | `potion-code` | `RBG_STATIC_MODEL=<path>` | 16M static code encoder, CPU, no torch. |
-| `code-rank` | `RBG_EMBEDDING_PRESET=code-rank` | CodeRankEmbed 137M, needs `[semantic]`. |
+| `code-rank` | `RBG_EMBEDDING_MODEL=<path>` | CodeRankEmbed 137M, needs `[semantic]`. |
 | `gte-reranker` | `RBG_RERANKER=gte-reranker` | ModernBERT code reranker, needs `[semantic]`. |
 
 Pull and verify artifacts explicitly:
