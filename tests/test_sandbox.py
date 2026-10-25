@@ -171,15 +171,24 @@ def _make_venv(path):
                    check=True, capture_output=True)
 
 
+def _install_probe(venv, name):
+    site = next((p for p in (venv / "lib").glob("python*/site-packages")), None)
+    assert site is not None, f"no site-packages in {venv}"
+    value = "inside" if name == "inside_probe" else "outside"
+    (site / f"{name}.py").write_text(f"VALUE = {value!r}\n")
+
+
 def test_project_venv_is_mounted_and_executes(tmp_path):
     _bwrap_only()
     root = tmp_path / "repo"
     root.mkdir()
     _make_venv(root / ".venv")
+    _install_probe(root / ".venv", "inside_probe")
     sb = Sandbox(str(root))
-    res = sb.run([sb.python_sandbox, "-c", "import sys; print(sys.prefix)"])
+    res = sb.run([sb.python_sandbox, "-c",
+                  "import sys, inside_probe; print(sys.prefix, inside_probe.VALUE)"])
     assert res.ok, res.stderr
-    assert res.stdout.strip() == "/tmp/venv"
+    assert res.stdout.strip() == "/tmp/venv inside"
 
 
 def test_venv_outside_workspace_is_mounted(tmp_path):
@@ -189,10 +198,12 @@ def test_venv_outside_workspace_is_mounted(tmp_path):
     root.mkdir()
     _make_venv(venv)
     os.symlink(venv, root / ".venv")
+    _install_probe(venv, "outside_probe")
     sb = Sandbox(str(root))
-    res = sb.run([sb.python, "-c", "import sys; print(sys.prefix)"])
+    res = sb.run([sb.python, "-c",
+                  "import sys, outside_probe; print(sys.prefix, outside_probe.VALUE)"])
     assert res.ok, res.stderr
-    assert res.stdout.strip() == "/tmp/venv"
+    assert res.stdout.strip() == "/tmp/venv outside"
 
 
 def test_project_under_home_with_venv_executes(tmp_path):
@@ -230,6 +241,17 @@ def test_host_data_directories_are_masked(tmp_path):
     res = Sandbox(str(tmp_path)).run(
         ["sh", "-c", "test -z \"$(ls -A /var 2>/dev/null)\" && "
                      "test -z \"$(ls -A /srv 2>/dev/null)\" && "
-                     "test -z \"$(ls -A /opt 2>/dev/null)\" && "
                      "test -z \"$(ls -A /run 2>/dev/null)\""])
     assert res.ok, res.stderr
+
+
+def test_opt_exposes_only_interpreter_runtime_subtrees(tmp_path):
+    _bwrap_only()
+    sb = Sandbox(str(tmp_path))
+    res = sb.run(["sh", "-c", "ls -A /opt 2>/dev/null || true"])
+    assert res.ok, res.stderr
+    allowed = [p for p in sb.runtime if p.startswith("/opt/")]
+    for entry in [e for e in res.stdout.splitlines() if e.strip()]:
+        top = f"/opt/{entry}"
+        assert any(p == top or p.startswith(top + "/") for p in allowed), \
+            f"unexpected /opt entry visible: {entry}"

@@ -84,8 +84,9 @@ class Sandbox:
         """Selected once per sandbox; raises if no backend and no escape hatch."""
         if self._isolation is None:
             binds = ((self.venv, VENV_MOUNT),) if self.venv else ()
+            keep = tuple(p for p in self.runtime if p != self.venv)
             self._isolation = select_isolation(self.network, self.root, binds,
-                                               keep=self.runtime)
+                                               keep=keep)
         return self._isolation
 
     @staticmethod
@@ -110,6 +111,21 @@ class Sandbox:
             except OSError:
                 pass
         exe = python if os.path.exists(python) else (shutil.which(python) or python)
+        # Follow the symlink chain and keep every prefix it names: a venv's
+        # python often points at a versioned directory that itself symlinks to
+        # the patch release, and the first target must exist inside the sandbox
+        # before the loader can follow the next hop.
+        current = os.path.abspath(exe)
+        seen: set[str] = set()
+        while os.path.islink(current) and current not in seen:
+            seen.add(current)
+            target = os.readlink(current)
+            if not os.path.isabs(target):
+                target = os.path.join(os.path.dirname(current), target)
+            current = os.path.normpath(target)
+            parent = os.path.dirname(os.path.dirname(current))
+            if os.path.isdir(parent):
+                paths.add(parent)
         real = os.path.realpath(exe)
         if os.path.basename(os.path.dirname(real)) == "bin":
             paths.add(os.path.dirname(os.path.dirname(real)))
@@ -117,14 +133,23 @@ class Sandbox:
 
     @staticmethod
     def _venv_root(python: str) -> str | None:
-        """The real venv directory behind ``python``, or None for system Python."""
+        """Identify a virtualenv from the executable path and its pyvenv.cfg.
+
+        Do not resolve the executable first: ``venv/bin/python`` is usually a
+        symlink to the base interpreter, and realpath would identify the base
+        prefix instead of the project environment.  Resolve only the discovered
+        environment root (which may itself be a symlink).
+        """
         if python == "python3" or not os.path.exists(python):
             return None
-        real = os.path.realpath(python)
-        bin_dir = os.path.dirname(real)
+        candidate = os.path.abspath(python)
+        bin_dir = os.path.dirname(candidate)
         if os.path.basename(bin_dir) != "bin":
             return None
-        return os.path.dirname(bin_dir)
+        root = os.path.dirname(bin_dir)
+        if not os.path.isfile(os.path.join(root, "pyvenv.cfg")):
+            return None
+        return os.path.realpath(root)
 
     @staticmethod
     def _resolve_python(root: str) -> str:

@@ -55,6 +55,9 @@ def _under(path: str, parent: str) -> bool:
 # ``/`` still exposes their contents, and command output can carry it back to the
 # model, so mask them before adding the workspace and explicit dependencies.
 _HOST_MASK = ("/var", "/mnt", "/media", "/srv", "/boot", "/opt", "/run")
+# Also hidden by explicit tmpfs mounts, so a kept runtime beneath them must be
+# rebound after the mask.
+_WORKSPACE_MASKS = ("/tmp", "/home", "/root")
 
 
 def _wrap(backend: str, network: bool, root: str,
@@ -81,7 +84,7 @@ def _wrap(backend: str, network: bool, root: str,
         # Re-expose only the interpreter runtime that lives under a masked path
         # (hosted CI puts Python in /opt); the rest of the mask stays empty.
         for path in keep:
-            if any(_under(path, masked) for masked in _HOST_MASK):
+            if any(_under(path, masked) for masked in (*_HOST_MASK, *_WORKSPACE_MASKS)):
                 argv += ["--ro-bind", path, path]
         # The candidate repo is the only writable host path inside the sandbox;
         # a project venv is mounted read-only at a stable sandbox path.
@@ -107,7 +110,7 @@ def _wrap(backend: str, network: bool, root: str,
         if os.path.exists(path):
             argv += ["--tmpfs", path]
     for path in keep:
-        if any(_under(path, masked) for masked in _HOST_MASK):
+        if any(_under(path, masked) for masked in (*_HOST_MASK, *_WORKSPACE_MASKS)):
             argv += ["--bindmount_ro", f"{path}:{path}"]
     for src, dst in ro_binds:
         argv += ["--bindmount_ro", f"{src}:{dst}"]

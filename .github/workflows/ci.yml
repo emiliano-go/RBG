@@ -38,7 +38,7 @@ jobs:
       - run: python -m eval.retrieval_ablation eval/suites/hard --k 5
       # Deterministic fault-localization quality: does the changed line appear
       # in the top 1/5/10 Ochiai suspects on the smoke suite?
-      - run: python -m eval.fault_localization_eval --suite eval/suites/smoke --out /tmp/fl.json
+      - run: python -m eval.fault_localization_eval --suite eval/suites/smoke --min-hit-at-1 1.0 --out /tmp/fl.json
 
   audit:
     runs-on: ubuntu-latest
