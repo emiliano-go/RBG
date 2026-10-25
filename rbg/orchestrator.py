@@ -78,6 +78,7 @@ class Report:
     patch_risk: float = 0.0
     patch: str = ""
     faults: list[dict] = field(default_factory=list)
+    repairs: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -88,7 +89,7 @@ class Report:
             "context_used": self.context_used, "iterations": self.iterations,
             "actions": self.actions, "plan": self.plan, "drift": self.drift,
             "completeness": self.completeness, "patch_risk": self.patch_risk,
-            "patch": self.patch, "faults": self.faults,
+            "patch": self.patch, "faults": self.faults, "repairs": self.repairs,
         }
 
 
@@ -290,6 +291,22 @@ class Orchestrator:
         except Exception:
             pass
 
+    def _fault_hits(self, task: str, faults: list[dict], hits: list[Hit]) -> list[Hit]:
+        """Retrieve the functions fault localization implicated, then dedupe."""
+        if not faults or self.retriever is None:
+            return hits
+        extra: list[Hit] = []
+        for fault in faults[:5]:
+            query = fault.get("symbol") or fault.get("path") or task
+            found = self.retriever.retrieve(query, limit=2)
+            if fault.get("path"):
+                found = [h for h in found if h.path == fault["path"]] or found
+            extra.extend(self.retriever.expand(found)[:3])
+        merged: dict[tuple[str, int], Hit] = {}
+        for hit in [*extra, *hits]:
+            merged.setdefault((hit.path, hit.start_line), hit)
+        return list(merged.values())[:self.context_limit]
+
     def run(self, task: str, task_id: str | None = None) -> Report:
         """Run the loop against a disposable copy of the repo when possible, so
         a failed attempt never mutates the caller's checkout.  Without an
@@ -487,6 +504,53 @@ class Orchestrator:
             except Exception as exc:  # evidence is advisory; never fail the run
                 self._log("fault_localization", {"error": type(exc).__name__},
                           model_name="ochiai-v1", task_id=task_id)
+
+        # 9a-2. bounded repair: feed failure diagnostics and localized suspects
+        # back into the model, then re-verify.  The action menu's
+        # ``ask_main_llm_to_revise`` is executed here rather than only logged.
+        repair_budget = max(0, self.max_iterations - report.iterations)
+        while failed and report.repairs < repair_budget:
+            hits = self._fault_hits(task, report.faults, hits)
+            diagnostics = "\n".join(f"{o.test_id}: {o.status} {o.message}" for o in failed)
+            if report.faults:
+                diagnostics += "\nSUSPECTS:\n" + "\n".join(
+                    f"- {f['path']}:{f['line']} {f.get('symbol') or ''} "
+                    f"(score {f['score']})" for f in report.faults[:10])
+            report.actions.append("ask_main_llm_to_revise")
+            edits = self.llm.edit(task, plan_text, hits, diagnostics)
+            if not edits:
+                break
+            for path, (before, after) in self._apply_edits(edits, work).items():
+                diffs[path] = (diffs[path][0] if path in diffs else before, after)
+            report.files_changed = list(diffs)
+            report.repairs += 1
+            self.index = RepoIndex.build(work)
+            self.retriever = self._retriever()
+            changed_symbols = self._changed_symbols(self.index, report.files_changed)
+            check = self.verifier.compile_check(report.files_changed)
+            if check is not None:
+                # Final gate is the latest evidence, not every historical try.
+                report.checks_run = [c for c in report.checks_run if c.get("name") != "compile"]
+                report.checks_run.append({"name": "compile", **check.to_dict()})
+                self._log("verifier", {"name": "compile", **check.to_dict()},
+                          model_name="py_compile", task_id=task_id,
+                          latency_ms=check.duration_ms)
+            test_res, outcomes = self.verifier.run_tests(selected)
+            report.checks_run = [c for c in report.checks_run if c.get("name") != "tests"]
+            report.checks_run.append({"name": "tests", **test_res.to_dict(),
+                                      "outcomes": [o.__dict__ for o in outcomes]})
+            self._log("verifier", {"name": "tests", **test_res.to_dict(),
+                                   "outcomes": [o.__dict__ for o in outcomes],
+                                   "repair": report.repairs},
+                      model_name="pytest", task_id=task_id, latency_ms=test_res.duration_ms)
+            final_res, final_outcomes = test_res, outcomes
+            for o in outcomes:
+                if o.duration_s > 0:
+                    self._durations[o.test_id] = o.duration_s
+            failed = [o for o in outcomes if o.status in ("failed", "error")]
+            failed = self._rerun_flaky_failures(failed, outcomes, report, task_id)
+            self._log("orchestrator", {"repair": report.repairs, "failed": len(failed)},
+                      model_name="orchestrator-v1", task_id=task_id)
 
         # 9b. choose the next step from the bounded action menu (spec 5.3)
         action, action_reasons = select_action(

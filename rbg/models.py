@@ -485,6 +485,7 @@ class ConformalCalibrator:
         self.alpha = alpha
         self.qhat: float | None = None
         self.cal_scores: np.ndarray | None = None
+        self.nonconformity: np.ndarray | None = None
         self.train_matrix: np.ndarray | None = None
         self.fitted = False
         self.mode = "shared"
@@ -509,12 +510,17 @@ class ConformalCalibrator:
             self.mode = "shared"
         self.base.fit(base_raw, base_y)
         p = np.array([self.base(s) for s in score_raw])
-        s_true = np.where(score_y > 0.5, p, 1.0 - p)
-        m = len(s_true)
-        self.cal_scores = s_true
+        p_true = np.where(score_y > 0.5, p, 1.0 - p)
+        # Split-conformal classification uses the *nonconformity* score
+        # a_i = 1 - p(y_i | x_i); qhat is the finite-sample order statistic
+        # ceil((n + 1)(1 - alpha)), not a linear-interpolated quantile of p.
+        scores = 1.0 - p_true
+        m = len(scores)
+        self.cal_scores = p_true  # kept for drift/exchangeability consumers
+        self.nonconformity = scores
         if m:
-            q = min(1.0, math.ceil((m + 1) * (1.0 - self.alpha)) / m)
-            self.qhat = float(np.quantile(s_true, q))
+            k = min(m, max(1, math.ceil((m + 1) * (1.0 - self.alpha))))
+            self.qhat = float(np.sort(scores)[k - 1])
         self.train_matrix = None if matrix is None else np.asarray(matrix, dtype=float)
         self.fitted = True
         return self
@@ -527,9 +533,10 @@ class ConformalCalibrator:
             return {0, 1}
         p = self.base(raw)
         out: set[int] = set()
-        if p >= 1.0 - self.qhat:
+        # Include c when 1 - p(c | x) <= qhat.
+        if 1.0 - p <= self.qhat:
             out.add(1)
-        if (1.0 - p) >= 1.0 - self.qhat:
+        if p <= self.qhat:
             out.add(0)
         return out or {1 if p >= 0.5 else 0}
 

@@ -48,3 +48,18 @@ def test_python_coverage_collects_failing_and_passing_lines(tmp_path):
     assert ("m.py", 2) in cov["test_m.py::test_add"]
     rows = fl.rank_lines(cov, ["test_m.py::test_add"])
     assert rows and rows[0]["path"] == "m.py"
+
+
+def test_collector_does_not_clobber_repository_files(tmp_path):
+    if fl.os.environ.get("RBG_ALLOW_UNISOLATED") != "1":
+        from rbg import isolation
+        if isolation.available_backend() is None:
+            import pytest
+            pytest.skip("no isolation backend on this host")
+    (tmp_path / "m.py").write_text("def f():\n    return 1\n")
+    (tmp_path / "test_m.py").write_text("from m import f\n\ndef test_f():\n    assert f() == 1\n")
+    (tmp_path / "_rbg_coverage_plugin.py").write_text("sentinel plugin\n")
+    (tmp_path / ".rbg-coverage.json").write_text("sentinel output\n")
+    fl.collect(str(tmp_path), Sandbox(str(tmp_path)), ["test_m.py::test_f"])
+    assert (tmp_path / "_rbg_coverage_plugin.py").read_text() == "sentinel plugin\n"
+    assert (tmp_path / ".rbg-coverage.json").read_text() == "sentinel output\n"

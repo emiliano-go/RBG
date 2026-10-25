@@ -286,6 +286,30 @@ def test_end_to_end_demo_verifies(tmp_path):
     assert "shop.py" in report.patch and "--- a/shop.py" in report.patch
 
 
+def test_failed_tests_feed_fault_context_into_a_repair_attempt(tmp_path, monkeypatch):
+    monkeypatch.setenv("RBG_FAULT_LOCALIZATION", "1")
+    root = str(tmp_path / "repair")
+    _make_demo_repo(root)
+
+    class TwoPassLLM(ScriptedLLM):
+        calls = 0
+
+        def edit(self, task, plan, context, diagnostics=""):
+            TwoPassLLM.calls += 1
+            if TwoPassLLM.calls == 1:
+                broken = FIXED_SHOP.replace("price * (1 - percent / 100.0)",
+                                            "price + percent")
+                return [EditOp("shop.py", broken)]
+            assert "SUSPECTS:" in diagnostics
+            return [EditOp("shop.py", FIXED_SHOP)]
+
+    report = Orchestrator(root, TwoPassLLM()).run("fix the discount calculation",
+                                                 task_id="repair1")
+    assert report.repairs == 1, report.to_dict()
+    assert report.success, report.to_dict()
+    assert report.faults and report.faults[0]["path"] == "shop.py"
+
+
 # -- experience memory (SWE-Exp) -------------------------------------------- #
 def test_experience_encoder_is_unfit_and_deterministic():
     from rbg.retrieval import EXPERIENCE_DIM, experience_encoder
@@ -650,6 +674,19 @@ def _synthetic_ledger(root, n=24):
         store.append_ledger(e)
     store.close()
     return str(root), idx
+
+
+def test_conformal_sets_are_not_trivially_both_classes():
+    rng = np.random.default_rng(11)
+    raw = rng.normal(size=400) * 2
+    y = (rng.random(400) < 1 / (1 + np.exp(-raw))).astype(float)
+    cal = ConformalCalibrator(alpha=0.1).fit(raw[:300], y[:300])
+    test_raw, test_y = raw[300:], y[300:]
+    coverage = cal.coverage(test_raw, test_y)
+    sizes = [len(cal.predict_set(float(r))) for r in test_raw]
+    assert coverage >= 0.75
+    assert sum(sizes) / len(sizes) < 1.9
+    assert any(n == 1 for n in sizes)
 
 
 def test_conformal_calibrator_coverage_and_ood():

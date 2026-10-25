@@ -36,12 +36,16 @@ def _pct(xs: list[float], q: float) -> float:
 def run_live(suite_dir: str, *, model: OpenAICompatLLM, repeats: int = 1,
              use_retrieval: bool = True, use_plan_audit: bool = True,
              max_iterations: int = 3, task_ids: list[str] | None = None,
-             price_in: float = 0.0, price_out: float = 0.0) -> dict:
+             price_in: float = 0.0, price_out: float = 0.0,
+             fault_localization: bool = False) -> dict:
     suite = load_suite(suite_dir)
     tasks = [t for t in suite["tasks"] if not task_ids or t["id"] in task_ids]
     config = BenchConfig("live", use_retrieval=use_retrieval,
                          use_plan_audit=use_plan_audit,
                          max_iterations=max_iterations)
+    old_fl = os.environ.get("RBG_FAULT_LOCALIZATION")
+    if fault_localization:
+        os.environ["RBG_FAULT_LOCALIZATION"] = "1"
     workdir = tempfile.mkdtemp(prefix="rbg-live-")
     runs: list[dict] = []
     try:
@@ -58,6 +62,11 @@ def run_live(suite_dir: str, *, model: OpenAICompatLLM, repeats: int = 1,
                 runs.append(row)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+        if fault_localization:
+            if old_fl is None:
+                os.environ.pop("RBG_FAULT_LOCALIZATION", None)
+            else:
+                os.environ["RBG_FAULT_LOCALIZATION"] = old_fl
 
     n = len(runs)
     resolved = sum(1 for r in runs if r["resolved"])
@@ -73,6 +82,7 @@ def run_live(suite_dir: str, *, model: OpenAICompatLLM, repeats: int = 1,
         "model": model.model,
         "base_url": model.base_url,
         "repeats": repeats,
+        "fault_localization": fault_localization,
         "n": n,
         "metrics": {
             "resolution_rate": round(resolved / n, 4) if n else 0.0,
@@ -104,6 +114,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--base-url", default="")
     ap.add_argument("--price-in", type=float, default=0.0, help="USD per 1M prompt tokens")
     ap.add_argument("--price-out", type=float, default=0.0, help="USD per 1M completion tokens")
+    ap.add_argument("--fault-localization", action="store_true",
+                    help="enable Ochiai evidence + repair attempts (A/B this flag)")
     args = ap.parse_args(argv)
 
     model = OpenAICompatLLM(model=args.model or None, base_url=args.base_url or None)
@@ -116,7 +128,8 @@ def main(argv: list[str] | None = None) -> int:
         use_plan_audit=not args.no_plan_audit,
         max_iterations=args.max_iterations,
         task_ids=[t for t in args.tasks.split(",") if t],
-        price_in=args.price_in, price_out=args.price_out)
+        price_in=args.price_in, price_out=args.price_out,
+        fault_localization=args.fault_localization)
     text = json.dumps(result, indent=2)
     if args.out:
         with open(args.out, "w", encoding="utf-8") as fh:

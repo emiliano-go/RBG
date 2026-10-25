@@ -61,6 +61,38 @@ edits one planned file per iteration and stops there, and `partial-audit`
 gives it the drift feedback that names the remaining files. On the 8
 multi-file tasks the former resolves 0/8 and the latter 8/8.
 
+## Live-model runs
+
+Real-model runs are reported separately from oracle ablations:
+
+```bash
+RBG_LLM_API_KEY=... RBG_LLM_MODEL=... \
+  python3 -m eval.live_benchmark --suite eval/suites/smoke --repeats 3 \
+  --tasks discount,off_by_one --price-in 0.15 --price-out 0.60 --out live.json
+```
+
+Use a held-out repository or task subset, keep the configuration with the
+result, and compare repeats rather than a single lucky run.
+
+## Fault localization
+
+The deterministic localizer is evaluated against reference bug locations:
+
+```bash
+python3 -m eval.fault_localization_eval --suite eval/suites/smoke --out fl.json
+```
+
+`metrics.hit_at_1/5/10` reports how often a line changed by the fix appears in
+the top suspects. To measure its effect on repair, A/B the live benchmark:
+
+```bash
+python3 -m eval.live_benchmark --suite <held-out-suite> --repeats 3 --out without.json
+python3 -m eval.live_benchmark --suite <held-out-suite> --repeats 3 \
+  --fault-localization --out with.json
+```
+
+No training rows are needed for localization itself.
+
 Before changing a default encoder or reranker, measure it:
 
 ```bash

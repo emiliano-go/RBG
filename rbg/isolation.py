@@ -54,7 +54,7 @@ def _under(path: str, parent: str) -> bool:
 # Host data directories that are not needed to run code.  A read-only bind of
 # ``/`` still exposes their contents, and command output can carry it back to the
 # model, so mask them before adding the workspace and explicit dependencies.
-_HOST_MASK = ("/var", "/mnt", "/media", "/srv", "/boot")
+_HOST_MASK = ("/var", "/mnt", "/media", "/srv", "/boot", "/opt", "/run")
 
 
 def _wrap(backend: str, network: bool, root: str,

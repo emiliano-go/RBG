@@ -15,9 +15,13 @@ from __future__ import annotations
 import json
 import math
 import os
+import tempfile
 
-PLUGIN = "_rbg_coverage_plugin.py"
-OUTPUT = ".rbg-coverage.json"
+PLUGIN = "rbg_coverage_plugin.py"
+
+
+class CoverageUnavailable(RuntimeError):
+    """The coverage run produced no artifact; do not treat it as empty evidence."""
 
 _PLUGIN_SOURCE = r'''
 import json
@@ -41,7 +45,7 @@ def _trace(frame, event, arg):
     if not name.startswith(_ROOT + os.sep):
         return _trace
     rel = os.path.relpath(name, _ROOT).replace(os.sep, "/")
-    if rel == "_rbg_coverage_plugin.py":
+    if rel.startswith(".rbg-cov-") or rel == "rbg_coverage_plugin.py":
         return _trace
     if rel.startswith(("tests/", "test_")) or "/test_" in rel:
         return _trace
@@ -120,35 +124,42 @@ def symbol_ranking(lines: list[dict], index, limit: int = 20) -> list[dict]:
     return sorted(best.values(), key=lambda r: -r["score"])[:limit]
 
 
-def write_plugin(root: str) -> str:
-    path = os.path.join(root, PLUGIN)
+def write_plugin(directory: str) -> str:
+    path = os.path.join(directory, PLUGIN)
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(_PLUGIN_SOURCE)
     return path
 
 
 def collect(root: str, sandbox, test_ids: list[str]) -> dict[str, set[tuple[str, int]]]:
-    """Run ``test_ids`` under the coverage plugin and return their line spectra."""
+    """Run ``test_ids`` under the coverage plugin and return their line spectra.
+
+    Instrumentation lives in a unique temp directory inside the repository (so
+    the sandbox can see it) and never reuses a repository filename.  A missing
+    artifact is an explicit :class:`CoverageUnavailable`, distinct from a
+    legitimate run with no covered source lines.
+    """
     if not test_ids:
         return {}
-    write_plugin(root)
-    host_out = os.path.join(root, OUTPUT)
+    scratch = tempfile.mkdtemp(prefix=".rbg-cov-", dir=root)
+    rel_scratch = os.path.relpath(scratch, root)
+    write_plugin(scratch)
+    host_out = os.path.join(scratch, "coverage.json")
     try:
-        sandbox.run(
+        res = sandbox.run(
             [sandbox.python, "-m", "pytest", *test_ids, "-q", "-p", PLUGIN[:-3],
              "--no-header"],
             cwd=root,
-            env={"PYTHONPATH": ".", "RBG_COVERAGE_ROOT": ".",
-                 "RBG_COVERAGE_FILE": OUTPUT}, timeout_s=300)
+            env={"PYTHONPATH": rel_scratch, "RBG_COVERAGE_ROOT": ".",
+                 "RBG_COVERAGE_FILE": f"{rel_scratch}/coverage.json"},
+            timeout_s=300)
         if not os.path.exists(host_out):
-            return {}
+            raise CoverageUnavailable(
+                f"coverage artifact missing (pytest exit {res.exit_code})")
         with open(host_out, encoding="utf-8") as fh:
             raw = json.load(fh)
         return {str(t): {(str(p), int(n)) for p, n in lines}
                 for t, lines in raw.items()}
     finally:
-        for path in (host_out, os.path.join(root, PLUGIN)):
-            try:
-                os.unlink(path)
-            except OSError:
-                pass
+        import shutil
+        shutil.rmtree(scratch, ignore_errors=True)

@@ -216,5 +216,8 @@ def test_project_under_home_with_venv_executes(tmp_path):
 def test_host_data_directories_are_masked(tmp_path):
     _bwrap_only()
     res = Sandbox(str(tmp_path)).run(
-        ["sh", "-c", "test -z \"$(ls -A /var 2>/dev/null)\" && test -z \"$(ls -A /srv 2>/dev/null)\""])
+        ["sh", "-c", "test -z \"$(ls -A /var 2>/dev/null)\" && "
+                     "test -z \"$(ls -A /srv 2>/dev/null)\" && "
+                     "test -z \"$(ls -A /opt 2>/dev/null)\" && "
+                     "test -z \"$(ls -A /run 2>/dev/null)\""])
     assert res.ok, res.stderr
