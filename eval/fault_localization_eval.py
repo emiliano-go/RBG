@@ -24,26 +24,53 @@ from rbg.fault_localization import collect, rank_lines
 from rbg.verify import Sandbox
 
 
-def _changed_lines(old: str, new: str) -> set[int]:
-    """Line numbers in the *old* file that the fix replaces."""
-    removed: set[int] = set()
+def _changed_lines(old: str, new: str) -> tuple[set[int], set[str]]:
+    """Old-file line anchors and edit kinds for a reference fix.
+
+    Insert-only fixes have no removed line; anchor them to the preceding old
+    line so they can still be scored against coverage of the buggy code.
+    """
+    lines: set[int] = set()
+    kinds: set[str] = set()
     old_lines = old.splitlines()
     for tag, i1, i2, _j1, _j2 in difflib.SequenceMatcher(None, old_lines,
                                                         new.splitlines()).get_opcodes():
-        if tag in ("replace", "delete"):
-            removed.update(range(i1 + 1, i2 + 1))
-    return removed
+        if tag == "insert":
+            kinds.add("insertion")
+            lines.add(max(1, min(i1 + 1, len(old_lines) or 1)))
+        elif tag == "delete":
+            kinds.add("deletion")
+            lines.update(range(i1 + 1, i2 + 1))
+        elif tag == "replace":
+            kinds.add("replacement")
+            lines.update(range(i1 + 1, i2 + 1))
+    return lines, kinds
 
 
-def _ground_truth(task: dict) -> set[tuple[str, int]]:
+def _ground_truth(task: dict) -> tuple[set[tuple[str, int]], str]:
     lines: set[tuple[str, int]] = set()
+    kinds: set[str] = set()
+    changed_files = 0
     for path, old in (task.get("files") or {}).items():
         new = (task.get("fix") or {}).get(path)
-        if new is None:
+        if new is None or old == new:
             continue
-        for line in _changed_lines(old, new):
-            lines.add((path, line))
-    return lines
+        file_lines, file_kinds = _changed_lines(old, new)
+        if file_lines:
+            changed_files += 1
+        lines.update((path, line) for line in file_lines)
+        kinds |= file_kinds
+    if changed_files > 1:
+        kind = "multi-file"
+    elif kinds == {"insertion"}:
+        kind = "insertion-only"
+    elif kinds == {"deletion"}:
+        kind = "deletion-only"
+    elif len(lines) > 1:
+        kind = "multi-line"
+    else:
+        kind = "replacement"
+    return lines, kind
 
 
 def evaluate_task(task: dict, root: str) -> dict:
@@ -51,14 +78,17 @@ def evaluate_task(task: dict, root: str) -> dict:
     passing = list(task.get("must_keep_passing") or [])
     if not passing:
         passing = [t for t in expected if t not in set(expected)]
-    truth = _ground_truth(task)
+    truth, derived = _ground_truth(task)
+    kind = task.get("category") or derived
     if not truth or not expected:
-        return {"id": task["id"], "skipped": "no reference lines or failing tests"}
+        return {"id": task["id"], "category": kind,
+                "skipped": "no reference lines or failing tests"}
     coverage = collect(root, Sandbox(root), expected + passing)
     rows = rank_lines(coverage, expected, limit=10)
     ranked = [(r["path"], r["line"]) for r in rows]
     return {
-        "id": task["id"], "n_failing": len(expected), "n_passing": len(passing),
+        "id": task["id"], "category": kind,
+        "n_failing": len(expected), "n_passing": len(passing),
         "truth": sorted(truth),
         "top_hits": {k: any(t in ranked[:k] for t in truth) for k in (1, 5, 10)},
         "top10": [{"path": p, "line": n, "score": rows[i]["score"]}
@@ -87,12 +117,24 @@ def run_suite(suite_dir: str, limit: int = 0) -> dict:
         shutil.rmtree(workdir, ignore_errors=True)
     usable = [r for r in results if "top_hits" in r]
     n = len(usable)
+    by_cat: dict[str, list[dict]] = {}
+    for row in usable:
+        by_cat.setdefault(row["category"], []).append(row)
     return {
         "suite": suite.get("name", os.path.basename(suite_dir)),
         "n_tasks": len(results), "n_evaluated": n,
+        "n_skipped": len(results) - n,
+        "skipped": [r["id"] for r in results if "top_hits" not in r],
         "metrics": {
             f"hit_at_{k}": round(sum(1 for r in usable if r["top_hits"][k]) / n, 4)
             if n else 0.0 for k in (1, 5, 10)
+        },
+        "per_category": {
+            cat: {"n": len(rows), **{
+                f"hit_at_{k}": round(
+                    sum(1 for r in rows if r["top_hits"][k]) / len(rows), 4)
+                for k in (1, 5, 10)}}
+            for cat, rows in sorted(by_cat.items())
         },
         "tasks": results,
     }

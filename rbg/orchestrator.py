@@ -78,6 +78,7 @@ class Report:
     patch_risk: float = 0.0
     patch: str = ""
     faults: list[dict] = field(default_factory=list)
+    faults_iteration: int = 0
     repairs: int = 0
 
     def to_dict(self) -> dict:
@@ -89,7 +90,8 @@ class Report:
             "context_used": self.context_used, "iterations": self.iterations,
             "actions": self.actions, "plan": self.plan, "drift": self.drift,
             "completeness": self.completeness, "patch_risk": self.patch_risk,
-            "patch": self.patch, "faults": self.faults, "repairs": self.repairs,
+            "patch": self.patch, "faults": self.faults, "faults_iteration": self.faults_iteration,
+            "repairs": self.repairs,
         }
 
 
@@ -291,6 +293,37 @@ class Orchestrator:
         except Exception:
             pass
 
+    def _refresh_faults(self, work: str, task_id: str, outcomes, failed,
+                        report: Report) -> None:
+        """Recompute suspects for the *current* code and failure set.
+
+        Repair attempts can move or remove the failing path, so suspects from an
+        earlier iteration must never be presented as current evidence.
+        """
+        report.faults_iteration = report.repairs
+        if not failed:
+            report.faults = []
+            return
+        if os.environ.get("RBG_FAULT_LOCALIZATION", "").lower() not in ("1", "true", "yes"):
+            return
+        try:
+            from .fault_localization import collect, rank_lines, symbol_ranking
+            ids = [o.test_id for o in outcomes]
+            coverage = collect(work, self.sandbox, ids)
+            lines = rank_lines(coverage, [o.test_id for o in failed])
+            report.faults = symbol_ranking(lines, self.index)
+            for fault in report.faults:
+                fault["iteration"] = report.repairs
+            self._log("fault_localization",
+                      {"suspects": report.faults, "n_tests": len(ids),
+                       "iteration": report.repairs},
+                      model_name="ochiai-v1", task_id=task_id)
+        except Exception as exc:  # evidence is advisory; never fail the run
+            report.faults = []
+            self._log("fault_localization",
+                      {"error": type(exc).__name__, "iteration": report.repairs},
+                      model_name="ochiai-v1", task_id=task_id)
+
     def _fault_hits(self, task: str, faults: list[dict], hits: list[Hit]) -> list[Hit]:
         """Retrieve the functions fault localization implicated, then dedupe."""
         if not faults or self.retriever is None:
@@ -491,19 +524,7 @@ class Orchestrator:
         # 9a. execution-based fault localization on the observed failures.
         # Opt-in because it reruns the suite under a line tracer; the result is
         # evidence for retrieval/test selection, never a status override.
-        if failed and os.environ.get("RBG_FAULT_LOCALIZATION", "").lower() in ("1", "true", "yes"):
-            try:
-                from .fault_localization import collect, rank_lines, symbol_ranking
-                ids = [o.test_id for o in final_outcomes]
-                coverage = collect(work, self.sandbox, ids)
-                lines = rank_lines(coverage, [o.test_id for o in failed])
-                report.faults = symbol_ranking(lines, self.index)
-                self._log("fault_localization", {"suspects": report.faults,
-                                                 "n_tests": len(ids)},
-                          model_name="ochiai-v1", task_id=task_id)
-            except Exception as exc:  # evidence is advisory; never fail the run
-                self._log("fault_localization", {"error": type(exc).__name__},
-                          model_name="ochiai-v1", task_id=task_id)
+        self._refresh_faults(work, task_id, final_outcomes, failed, report)
 
         # 9a-2. bounded repair: feed failure diagnostics and localized suspects
         # back into the model, then re-verify.  The action menu's
@@ -549,6 +570,8 @@ class Orchestrator:
                     self._durations[o.test_id] = o.duration_s
             failed = [o for o in outcomes if o.status in ("failed", "error")]
             failed = self._rerun_flaky_failures(failed, outcomes, report, task_id)
+            # The code changed: discard prior suspects and localize again.
+            self._refresh_faults(work, task_id, final_outcomes, failed, report)
             self._log("orchestrator", {"repair": report.repairs, "failed": len(failed)},
                       model_name="orchestrator-v1", task_id=task_id)
 

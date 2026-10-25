@@ -307,7 +307,30 @@ def test_failed_tests_feed_fault_context_into_a_repair_attempt(tmp_path, monkeyp
                                                  task_id="repair1")
     assert report.repairs == 1, report.to_dict()
     assert report.success, report.to_dict()
-    assert report.faults and report.faults[0]["path"] == "shop.py"
+    assert report.faults_iteration == report.repairs
+    assert report.faults == []  # stale pre-repair suspects are cleared
+    entries = Orchestrator(root, ScriptedLLM()).ledger.store.read_ledger()
+    assert any(e.get("component") == "fault_localization" for e in entries)
+
+
+def test_faults_are_recomputed_after_each_failed_repair(tmp_path, monkeypatch):
+    monkeypatch.setenv("RBG_FAULT_LOCALIZATION", "1")
+    root = str(tmp_path / "repair-stale")
+    _make_demo_repo(root)
+
+    class AlwaysWrongLLM(ScriptedLLM):
+        def edit(self, task, plan, context, diagnostics=""):
+            broken = FIXED_SHOP.replace("price * (1 - percent / 100.0)",
+                                        "price + percent")
+            return [EditOp("shop.py", broken)]
+
+    report = Orchestrator(root, AlwaysWrongLLM()).run("fix the discount calculation",
+                                                     task_id="repair2")
+    assert report.repairs == 2, report.to_dict()
+    assert report.faults and report.faults_iteration == 2
+    assert all(f["iteration"] == 2 for f in report.faults)
+    entries = Orchestrator(root, ScriptedLLM()).ledger.store.read_ledger()
+    assert any(e.get("component") == "fault_localization" for e in entries)
 
 
 # - experience memory (SWE-Exp) -------------------------------------------- #

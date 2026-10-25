@@ -1,0 +1,126 @@
+{
+  "name": "fl-broad",
+  "tasks": [
+    {
+      "id": "insertion_guard",
+      "task": "fix safe_div so division by zero returns 0",
+      "expected_files": [
+        "maths.py"
+      ],
+      "files": {
+        "maths.py": "def safe_div(a, b):\n    return a / b\n",
+        "test_maths.py": "from maths import safe_div\n\n\ndef test_zero():\n    assert safe_div(1, 0) == 0\n\n\ndef test_normal():\n    assert safe_div(4, 2) == 2\n"
+      },
+      "fix": {
+        "maths.py": "def safe_div(a, b):\n    if b == 0:\n        return 0\n    return a / b\n"
+      },
+      "expect_pass": [
+        "test_maths.py::test_zero"
+      ],
+      "must_keep_passing": [
+        "test_maths.py::test_normal"
+      ]
+    },
+    {
+      "id": "deletion_extra_step",
+      "task": "fix clamp so it does not add one",
+      "expected_files": [
+        "limits.py"
+      ],
+      "files": {
+        "limits.py": "def clamp(v):\n    v = v + 1\n    return min(v, 10)\n",
+        "test_limits.py": "from limits import clamp\n\n\ndef test_clamp():\n    assert clamp(5) == 5\n\n\ndef test_cap():\n    assert clamp(20) == 10\n"
+      },
+      "fix": {
+        "limits.py": "def clamp(v):\n    return min(v, 10)\n"
+      },
+      "expect_pass": [
+        "test_limits.py::test_clamp"
+      ],
+      "must_keep_passing": [
+        "test_limits.py::test_cap"
+      ]
+    },
+    {
+      "id": "multiline_two_ops",
+      "task": "fix subtraction and multiplication",
+      "expected_files": [
+        "ops.py"
+      ],
+      "files": {
+        "ops.py": "def sub(a, b):\n    return a + b\n\n\ndef mul(a, b):\n    return a + b\n",
+        "test_ops.py": "from ops import sub, mul\n\n\ndef test_sub():\n    assert sub(5, 3) == 2\n\n\ndef test_mul():\n    assert mul(4, 3) == 12\n"
+      },
+      "fix": {
+        "ops.py": "def sub(a, b):\n    return a - b\n\n\ndef mul(a, b):\n    return a * b\n"
+      },
+      "expect_pass": [
+        "test_ops.py::test_sub",
+        "test_ops.py::test_mul"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "multifile_pair",
+      "task": "fix both helper modules",
+      "expected_files": [
+        "left.py",
+        "right.py"
+      ],
+      "files": {
+        "left.py": "def left(x):\n    return x - 1\n",
+        "right.py": "def right(x):\n    return x - 2\n",
+        "test_pair.py": "from left import left\nfrom right import right\n\n\ndef test_left():\n    assert left(3) == 3\n\n\ndef test_right():\n    assert right(3) == 3\n"
+      },
+      "fix": {
+        "left.py": "def left(x):\n    return x\n",
+        "right.py": "def right(x):\n    return x\n"
+      },
+      "expect_pass": [
+        "test_pair.py::test_left",
+        "test_pair.py::test_right"
+      ],
+      "must_keep_passing": []
+    },
+    {
+      "id": "indirect_constant",
+      "task": "fix the configured limit",
+      "expected_files": [
+        "config.py"
+      ],
+      "files": {
+        "config.py": "LIMIT = 3\n",
+        "use_config.py": "from config import LIMIT\n\n\ndef allowed(n):\n    return n <= LIMIT\n",
+        "test_config.py": "from use_config import allowed\n\n\ndef test_allowed():\n    assert allowed(8)\n"
+      },
+      "fix": {
+        "config.py": "LIMIT = 10\n"
+      },
+      "expect_pass": [
+        "test_config.py::test_allowed"
+      ],
+      "must_keep_passing": [],
+      "category": "indirect"
+    },
+    {
+      "id": "interacting_failures",
+      "task": "fix total and average together",
+      "expected_files": [
+        "stats.py"
+      ],
+      "files": {
+        "stats.py": "def total(xs):\n    return sum(xs) - 1\n\n\ndef average(xs):\n    return total(xs) / len(xs)\n",
+        "test_stats.py": "from stats import total, average\n\n\ndef test_total():\n    assert total([1, 2, 3]) == 6\n\n\ndef test_average():\n    assert average([2, 4]) == 3\n"
+      },
+      "fix": {
+        "stats.py": "def total(xs):\n    return sum(xs)\n\n\ndef average(xs):\n    return total(xs) / len(xs)\n"
+      },
+      "expect_pass": [
+        "test_stats.py::test_total",
+        "test_stats.py::test_average"
+      ],
+      "must_keep_passing": [],
+      "category": "interacting"
+    }
+  ]
+}

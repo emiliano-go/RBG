@@ -25,6 +25,17 @@ from rbg.providers import OpenAICompatLLM
 from rbg.training import wilson_ci
 
 
+def compare_metrics(base: dict, candidate: dict) -> dict:
+    """Per-metric ``candidate - base`` for an A/B live run."""
+    out: dict[str, dict] = {}
+    for key in sorted(set(base.get("metrics", {})) & set(candidate.get("metrics", {}))):
+        a, b = base["metrics"][key], candidate["metrics"][key]
+        if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+            out[key] = {"base": round(a, 4), "candidate": round(b, 4),
+                        "delta": round(b - a, 4)}
+    return out
+
+
 def _pct(xs: list[float], q: float) -> float:
     if not xs:
         return 0.0
@@ -116,6 +127,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--price-out", type=float, default=0.0, help="USD per 1M completion tokens")
     ap.add_argument("--fault-localization", action="store_true",
                     help="enable Ochiai evidence + repair attempts (A/B this flag)")
+    ap.add_argument("--compare-with", default="",
+                    help="baseline result JSON; adds candidate-minus-baseline metrics")
     args = ap.parse_args(argv)
 
     model = OpenAICompatLLM(model=args.model or None, base_url=args.base_url or None)
@@ -130,6 +143,9 @@ def main(argv: list[str] | None = None) -> int:
         task_ids=[t for t in args.tasks.split(",") if t],
         price_in=args.price_in, price_out=args.price_out,
         fault_localization=args.fault_localization)
+    if args.compare_with:
+        with open(args.compare_with, encoding="utf-8") as fh:
+            result["comparison"] = compare_metrics(json.load(fh), result)
     text = json.dumps(result, indent=2)
     if args.out:
         with open(args.out, "w", encoding="utf-8") as fh:

@@ -78,3 +78,19 @@ def test_evaluation_gate_fails_when_nothing_was_measured(tmp_path):
     rc = fle.main(["--suite", str(suite), "--out", str(out)])
     assert rc == 1
     assert json.loads(out.read_text())["n_evaluated"] == 0
+
+
+def test_insertion_only_fix_gets_an_old_line_anchor():
+    lines, kinds = fle._changed_lines("a\nb\nc\n", "a\nb\nx\nc\n")
+    assert kinds == {"insertion"}
+    assert lines == {3}
+
+
+def test_broad_suite_has_required_categories():
+    import json
+    from pathlib import Path
+    data = json.loads(Path("eval/suites/fl-broad/suite.json").read_text())
+    cats = {t.get("category") for t in data["tasks"]}
+    assert {"indirect", "interacting"} <= cats
+    ids = {t["id"] for t in data["tasks"]}
+    assert {"insertion_guard", "deletion_extra_step", "multifile_pair"} <= ids

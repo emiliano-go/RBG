@@ -52,3 +52,14 @@ def test_live_benchmark_reports_run_level_metrics(monkeypatch):
     assert out["metrics"]["regression_rate"] == 0.0
     assert out["metrics"]["p95_wall_s"] >= out["metrics"]["p50_wall_s"]
     assert out["metrics"]["cost_usd"] == 0.0004
+
+
+def test_compare_with_adds_metric_deltas(monkeypatch, tmp_path):
+    import json
+    monkeypatch.setattr(live_benchmark, "load_suite", lambda _: SUITE)
+    base = {"metrics": {"resolution_rate": 0.0, "cost_usd": 0.0}}
+    path = tmp_path / "base.json"
+    path.write_text(json.dumps(base))
+    out = live_benchmark.run_live("ignored", model=FixLLM(), repeats=1)
+    diff = live_benchmark.compare_metrics(base, out)
+    assert diff["resolution_rate"]["delta"] == 1.0

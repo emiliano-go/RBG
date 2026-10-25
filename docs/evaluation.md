@@ -80,7 +80,13 @@ The deterministic localizer is evaluated against reference bug locations:
 
 ```bash
 python3 -m eval.fault_localization_eval --suite eval/suites/smoke --out fl.json
+python3 -m eval.fault_localization_eval --suite eval/suites/fl-broad --out fl-broad.json
 ```
+
+The broad suite covers insertion-only, deletion-only, multi-line, multi-file,
+interacting-failure, and indirect-constant fixes. It reports every task,
+skipped ids, per-category Hit@1/5/10, and an overall baseline currently around
+0.83; the smoke suite remains the fast 1.0 CI guard.
 
 `metrics.hit_at_1/5/10` reports how often a line changed by the fix appears in
 the top suspects. CI enforces the smoke-suite baseline (`hit_at_1 = 1.0`) and
@@ -90,8 +96,11 @@ requires every selected task to be evaluated; diagnostic runs can pass
 ```bash
 python3 -m eval.live_benchmark --suite <held-out-suite> --repeats 3 --out without.json
 python3 -m eval.live_benchmark --suite <held-out-suite> --repeats 3 \
-  --fault-localization --out with.json
+  --fault-localization --out with.json --compare-with without.json
 ```
+
+`--compare-with` adds candidate-minus-baseline deltas for resolution,
+regressions, coverage, latency, tokens, and cost.
 
 No training rows are needed for localization itself.
 
